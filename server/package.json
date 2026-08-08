@@ -1,0 +1,19 @@
+{
+  "name": "sistema-compras-locales-backend",
+  "version": "1.0.0",
+  "description": "API REST Node.js / Express para Gestión de Compras y Adquisiciones Locales con SQL Server",
+  "main": "src/app.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node src/app.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "msnodesqlv8": "^5.2.3",
+    "mssql": "^10.0.2"
+  }
+}

@@ -1,0 +1,2322 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Gestión de Compras y Adquisiciones Locales</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- SheetJS (xlsx) for Excel processing in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/custom.css">
+
+  <!-- Alpine.js (defer) -->
+  <script defer src="js/excelParser.js"></script>
+  <script defer src="js/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 h-full overflow-hidden antialiased selection:bg-indigo-500 selection:text-white" x-data="comprasApp">
+
+  <!-- TOAST NOTIFICATION FLOATING CONTAINER -->
+  <div x-show="toast.show" 
+       x-transition:enter="transition ease-out duration-300 transform"
+       x-transition:enter-start="opacity-0 translate-y-2"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed top-5 right-5 z-[9999] flex items-center p-4 mb-4 rounded-xl shadow-2xl border bg-white"
+       :class="{
+         'text-emerald-700 border-emerald-300 bg-emerald-50/90': toast.type === 'success',
+         'text-amber-700 border-amber-300 bg-amber-50/90': toast.type === 'warning',
+         'text-rose-700 border-rose-300 bg-rose-50/90': toast.type === 'error',
+         'text-indigo-700 border-indigo-300 bg-indigo-50/90': toast.type === 'info'
+       }" style="display: none;">
+    <i class="fa-solid mr-3 text-lg" 
+       :class="{
+         'fa-circle-check': toast.type === 'success',
+         'fa-triangle-exclamation': toast.type === 'warning',
+         'fa-circle-xmark': toast.type === 'error',
+         'fa-circle-info': toast.type === 'info'
+       }"></i>
+    <span class="font-medium text-sm text-slate-800" x-text="toast.message"></span>
+    <button @click="toast.show = false" class="ml-4 text-slate-400 hover:text-slate-600">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  </div>
+
+  <!-- PANTALLA DE LOGIN (Tema Claro) -->
+  <template x-if="!token || !user">
+    <div class="min-h-screen flex items-center justify-center bg-slate-100 px-4 relative overflow-hidden">
+      <div class="max-w-md w-full glass-card p-8 rounded-2xl shadow-xl border border-slate-200 relative z-10 animate-modal bg-white">
+        <div class="text-center mb-8">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-200 mb-4 shadow-sm">
+            <i class="fa-solid fa-boxes-packing text-2xl"></i>
+          </div>
+          <h2 class="text-2xl font-bold tracking-tight text-slate-900">Compras y Adquisiciones</h2>
+          <p class="text-xs text-slate-500 mt-1">Ingrese sus credenciales corporativas para acceder</p>
+        </div>
+
+        <template x-if="authError">
+          <div class="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center">
+            <i class="fa-solid fa-triangle-exclamation mr-2 text-sm"></i>
+            <span x-text="authError"></span>
+          </div>
+        </template>
+
+        <form @submit.prevent="login()" class="space-y-5">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">Usuario</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <i class="fa-solid fa-user"></i>
+              </span>
+              <input type="text" x-model="loginForm.usuario" required
+                     class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">Contraseña</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <i class="fa-solid fa-lock"></i>
+              </span>
+              <input type="password" x-model="loginForm.password" required
+                     class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+            </div>
+          </div>
+
+          <button type="submit" :disabled="isLoading"
+                  class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold rounded-xl text-sm shadow-md shadow-indigo-600/20 transition flex items-center justify-center">
+            <template x-if="isLoading">
+              <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>
+            </template>
+            <span>Iniciar Sesión</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </template>
+
+  <!-- PANTALLA PRINCIPAL CON SIDEBAR Y CONTENIDO (Tema Claro) -->
+  <template x-if="token && user">
+    <div class="flex h-screen bg-slate-100 text-slate-800 overflow-hidden">
+
+      <!-- MENÚ LATERAL (SIDEBAR) -->
+      <aside class="sidebar-transition h-full bg-white border-r border-slate-200 flex flex-col justify-between relative z-30 shadow-sm"
+             :class="sidebarOpen ? 'w-64' : 'w-20'">
+
+        <!-- ENCABEZADO SIDEBAR Y TOGGLE -->
+        <div>
+          <div class="h-16 flex items-center justify-between px-4 border-b border-slate-200">
+            <div class="flex items-center space-x-3 overflow-hidden" x-show="sidebarOpen">
+              <div class="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
+                <i class="fa-solid fa-truck-ramp-box text-sm"></i>
+              </div>
+              <span class="font-bold text-sm text-slate-900 tracking-wide truncate">SGC Adquisiciones</span>
+            </div>
+            <button @click="sidebarOpen = !sidebarOpen" 
+                    title="Ocultar / Mostrar Menú"
+                    class="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition mx-auto">
+              <i class="fa-solid" :class="sidebarOpen ? 'fa-indent' : 'fa-outdent'"></i>
+            </button>
+          </div>
+
+          <!-- NAVEGACIÓN -->
+          <nav class="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-140px)]">
+            
+            <!-- Dashboard Consolidado / Métricas -->
+            <div>
+              <div class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1" x-show="sidebarOpen">Dashboard</div>
+              <button @click="switchView('dashboard'); dashSubView = 'consolidado'"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition mb-1"
+                      :class="(currentView === 'dashboard' && dashSubView === 'consolidado') ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-table-list text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Consolidado General</span>
+              </button>
+              <button @click="switchView('dashboard'); dashSubView = 'resumen'"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      :class="(currentView === 'dashboard' && dashSubView === 'resumen') ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-chart-pie text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Métricas y Resumen</span>
+              </button>
+            </div>
+
+            <!-- Administración (Solo Jefe de bodega) -->
+            <template x-if="hasRole('Jefe de bodega')">
+              <div class="pt-2">
+                <div class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1" x-show="sidebarOpen">Administración</div>
+                <button @click="switchView('usuarios')"
+                        class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                        :class="currentView === 'usuarios' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                  <i class="fa-solid fa-users-gear text-base w-6 text-center"></i>
+                  <span class="ml-2 truncate" x-show="sidebarOpen">Crear Usuario</span>
+                </button>
+              </div>
+            </template>
+
+            <!-- Catálogos (Solo Encargado de pedidos) -->
+            <template x-if="hasRole('Encargado de pedidos')">
+              <div class="pt-2">
+                <div class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1" x-show="sidebarOpen">Catálogos</div>
+                <button @click="switchView('productos')"
+                        class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                        :class="currentView === 'productos' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                  <i class="fa-solid fa-box text-base w-6 text-center"></i>
+                  <span class="ml-2 truncate" x-show="sidebarOpen">Productos</span>
+                </button>
+                <button @click="switchView('responsables')"
+                        class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                        :class="currentView === 'responsables' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                  <i class="fa-solid fa-user-tie text-base w-6 text-center"></i>
+                  <span class="ml-2 truncate" x-show="sidebarOpen">Responsables</span>
+                </button>
+                <button @click="switchView('tipocompra')"
+                        class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                        :class="currentView === 'tipocompra' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                  <i class="fa-solid fa-tags text-base w-6 text-center"></i>
+                  <span class="ml-2 truncate" x-show="sidebarOpen">Tipo de Compra</span>
+                </button>
+                <button @click="switchView('proveedores')"
+                        class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                        :class="currentView === 'proveedores' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                  <i class="fa-solid fa-building text-base w-6 text-center"></i>
+                  <span class="ml-2 truncate" x-show="sidebarOpen">Proveedores</span>
+                </button>
+              </div>
+            </template>
+
+            <!-- Pedidos -->
+            <div class="pt-2">
+              <div class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1" x-show="sidebarOpen">Pedidos</div>
+              <button @click="switchView('pedidos')"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      :class="currentView === 'pedidos' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-file-invoice text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Listado Pedidos</span>
+              </button>
+              <template x-if="hasRole('Encargado de pedidos')">
+                <button @click="switchView('asignacion')"
+                        class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                        :class="currentView === 'asignacion' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                  <i class="fa-solid fa-user-check text-base w-6 text-center"></i>
+                  <span class="ml-2 truncate" x-show="sidebarOpen">Asignar Responsable</span>
+                </button>
+              </template>
+            </div>
+
+            <!-- Ejecución Compras -->
+            <div class="pt-2">
+              <div class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1" x-show="sidebarOpen">Ejecución Compras</div>
+              <button @click="switchView('ordenes')"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      :class="currentView === 'ordenes' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-cart-flatbed text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Registrar Orden Compra</span>
+              </button>
+              <button @click="switchView('entrega_orden')"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      :class="currentView === 'entrega_orden' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-truck-arrow-right text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Entrega/Recepción Orden</span>
+              </button>
+              <button @click="switchView('entrega_expediente')"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      :class="currentView === 'entrega_expediente' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-folder-closed text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Entrega Expediente</span>
+              </button>
+              <button @click="switchView('recepcion_compra')"
+                      class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition"
+                      :class="currentView === 'recepcion_compra' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'">
+                <i class="fa-solid fa-receipt text-base w-6 text-center"></i>
+                <span class="ml-2 truncate" x-show="sidebarOpen">Recepción de Compra</span>
+              </button>
+            </div>
+
+          </nav>
+        </div>
+
+        <!-- CERRAR SESIÓN UBICADO PERMANENTEMENTE EN LA ESQUINA INFERIOR IZQUIERDA -->
+        <div class="p-3 border-t border-slate-200 bg-slate-50">
+          <button @click="logout()" 
+                  class="w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition">
+            <i class="fa-solid fa-right-from-bracket text-base w-6 text-center"></i>
+            <span class="ml-2 truncate" x-show="sidebarOpen">Cerrar Sesión</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ÁREA DE CONTENIDO PRINCIPAL -->
+      <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+
+        <!-- HEADER PRINCIPAL -->
+        <header class="h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between shrink-0 shadow-sm">
+          <div class="flex items-center space-x-3">
+            <h1 class="text-base font-bold text-slate-900 uppercase tracking-wider" 
+                x-text="
+                  (currentView === 'dashboard' && dashSubView === 'consolidado') ? 'Consolidado General de Compras' :
+                  (currentView === 'dashboard' && dashSubView === 'resumen') ? 'Métricas y Resumen por Renglón' :
+                  currentView === 'usuarios' ? 'Administración de Usuarios' :
+                  currentView === 'productos' ? 'Catálogo de Productos' :
+                  currentView === 'responsables' ? 'Catálogo de Responsables' :
+                  currentView === 'tipocompra' ? 'Catálogo Tipos de Compra' :
+                  currentView === 'proveedores' ? 'Catálogo de Proveedores' :
+                  currentView === 'pedidos' ? 'Listado General de Pedidos' :
+                  currentView === 'asignacion' ? 'Asignación de Responsable' :
+                  currentView === 'ordenes' ? 'Órdenes de Compra' :
+                  currentView === 'entrega_orden' ? 'Entrega y Recepción de Orden' :
+                  currentView === 'entrega_expediente' ? 'Entrega de Expediente' :
+                  currentView === 'recepcion_compra' ? 'Recepción de Compra y Facturación' : ''
+                "></h1>
+          </div>
+
+          <!-- DETALLES DE USUARIO Y ROLES ACTIVALES -->
+          <div class="flex items-center space-x-4">
+            <div class="text-right hidden sm:block">
+              <div class="text-xs font-bold text-slate-800" x-text="user?.nombre_completo"></div>
+              <div class="text-[10px] text-slate-500 flex items-center justify-end space-x-1 mt-0.5">
+                <template x-for="r in user?.roles" :key="r">
+                  <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded text-[9px] font-medium" x-text="r"></span>
+                </template>
+              </div>
+            </div>
+            <div class="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-700 font-bold text-sm shadow-sm">
+              <span x-text="user?.id_usuario"></span>
+            </div>
+          </div>
+        </header>
+
+        <!-- VISTAS DINÁMICAS -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+
+          <!-- 1. DASHBOARD PRINCIPAL -->
+          <template x-if="currentView === 'dashboard'">
+            <div class="space-y-6">
+
+              <!-- SUBMÓDULO SECUNDARIO: MÉTRICAS Y RESUMEN POR RENGLÓN -->
+              <template x-if="dashSubView === 'resumen'">
+                <div class="space-y-6">
+                  <!-- TARJETAS DE MÉTRICAS KPI -->
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div class="glass-card p-5 rounded-2xl border border-slate-200 glass-card-hover">
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Pedidos</p>
+                          <h3 class="text-2xl font-black text-slate-900 mt-1" x-text="dashboardData.kpis.total_pedidos">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                          <i class="fa-solid fa-list-check text-xl"></i>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="glass-card p-5 rounded-2xl border border-slate-200 glass-card-hover">
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Ingresados</p>
+                          <h3 class="text-2xl font-black text-emerald-600 mt-1" x-text="dashboardData.kpis.ingresados">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                          <i class="fa-solid fa-circle-check text-xl"></i>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="glass-card p-5 rounded-2xl border border-slate-200 glass-card-hover">
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pendientes</p>
+                          <h3 class="text-2xl font-black text-amber-600 mt-1" x-text="dashboardData.kpis.pendientes">0</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+                          <i class="fa-solid fa-clock text-xl"></i>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="glass-card p-5 rounded-2xl border border-slate-200 glass-card-hover">
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Monto Invertido</p>
+                          <h3 class="text-xl font-black text-slate-900 mt-1" x-text="'Q ' + (dashboardData.kpis.monto_invertido || 0).toLocaleString('es-GT', {minimumFractionDigits:2, maximumFractionDigits:2})">Q 0.00</h3>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600">
+                          <i class="fa-solid fa-money-bill-wave text-xl"></i>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- RESUMEN POR RENGLÓN PRESUPUESTARIO -->
+                  <div class="glass-card p-5 rounded-2xl border border-slate-200">
+                    <div class="flex items-center justify-between mb-4">
+                      <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                        <i class="fa-solid fa-layer-group text-indigo-600 mr-2"></i>
+                        Resumen por Renglón Presupuestario
+                      </h3>
+                      <span class="text-xs text-slate-500">Haga clic en una tarjeta para filtrar en el Consolidado</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <template x-for="item in dashboardData.resumen_renglones" :key="item.renglon">
+                        <div @click="filterByRenglonCard(item.renglon)"
+                             class="p-4 rounded-xl border transition cursor-pointer"
+                             :class="dashFilterRenglon === item.renglon ? 'bg-indigo-50/80 border-indigo-500 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'">
+                          <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-slate-800" x-text="'Renglón ' + item.renglon"></span>
+                            <span class="text-xs font-bold" :class="item.porcentaje === 100 ? 'text-emerald-600' : 'text-indigo-600'" x-text="item.porcentaje + '%'"></span>
+                          </div>
+
+                          <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-3">
+                            <div class="bg-indigo-600 h-full rounded-full transition-all duration-500" :style="'width: ' + item.porcentaje + '%'"></div>
+                          </div>
+
+                          <div class="flex justify-between text-[11px] text-slate-600">
+                            <span>Total: <strong class="text-slate-800" x-text="item.total"></strong></span>
+                            <span>Ingresados: <strong class="text-emerald-600" x-text="item.ingresados"></strong></span>
+                            <span>Pendientes: <strong class="text-amber-600" x-text="item.pendientes"></strong></span>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- SUBMÓDULO PRINCIPAL: LISTADO CONSOLIDADO -->
+              <template x-if="dashSubView === 'consolidado'">
+                <div class="glass-card p-5 rounded-2xl border border-slate-200 space-y-4">
+                  
+                  <!-- FILTROS Y CONTROLES DEL CONSOLIDADO -->
+                  <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div class="flex flex-wrap items-center gap-3">
+                      
+                      <!-- Filtro Cuatrimestre -->
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cuatrimestre</label>
+                        <select x-model="dashFilterCuatrimestre" @change="dashPage = 1"
+                                class="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 shadow-sm">
+                          <option value="todos">Todo el año</option>
+                          <option value="1">Primero</option>
+                          <option value="2">Segundo</option>
+                          <option value="3">Tercero</option>
+                        </select>
+                      </div>
+
+                      <!-- Filtro Estado -->
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estado</label>
+                        <select x-model="dashFilterEstado" @change="dashPage = 1"
+                                class="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 shadow-sm">
+                          <option value="todos">Todos los estados</option>
+                          <option value="Pendiente">Pendientes</option>
+                          <option value="Ingresado">Ingresados</option>
+                        </select>
+                      </div>
+
+                      <!-- Filtro Renglón Presupuestario -->
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Renglón</label>
+                        <select x-model="dashFilterRenglon" @change="dashPage = 1"
+                                class="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 shadow-sm">
+                          <option value="">Todos</option>
+                          <template x-for="r in availableRenglones" :key="r">
+                            <option :value="r" x-text="r"></option>
+                          </template>
+                        </select>
+                      </div>
+
+                      <!-- Reset Renglón Filter if active -->
+                      <template x-if="dashFilterRenglon">
+                        <div class="self-end">
+                          <button @click="dashFilterRenglon = ''" class="px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-300 rounded-xl text-xs hover:bg-indigo-100">
+                            Renglón: <span x-text="dashFilterRenglon"></span> <i class="fa-solid fa-xmark ml-1"></i>
+                          </button>
+                        </div>
+                      </template>
+
+                    </div>
+
+                  <!-- Buscador Inteligente y Exportar Excel -->
+                  <div class="flex items-center space-x-3">
+                    <div class="relative w-64">
+                      <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                      <input type="text" x-model="dashSearch" 
+                             placeholder="Buscar pedido, código, descripción..."
+                             class="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 shadow-sm">
+                    </div>
+
+                    <button @click="exportDashboardExcel()" 
+                            class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs shadow-md shadow-emerald-600/20 transition flex items-center shrink-0">
+                      <i class="fa-solid fa-file-excel mr-2 text-sm"></i>
+                      Exportar Excel (.xlsx)
+                    </button>
+                  </div>
+                </div>
+
+                <!-- TABLA DE LISTADO CONSOLIDADO -->
+                <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                        <th @click="sortDashBy('numero_pedido')" class="p-3 cursor-pointer hover:text-slate-900">No. Pedido</th>
+                        <th @click="sortDashBy('fecha_pedido')" class="p-3 cursor-pointer hover:text-slate-900">Fecha Pedido</th>
+                        <th @click="sortDashBy('numero_orden_compra')" class="p-3 cursor-pointer hover:text-slate-900">No. Orden Compra</th>
+                        <th @click="sortDashBy('codigo')" class="p-3 cursor-pointer hover:text-slate-900">Código</th>
+                        <th @click="sortDashBy('descripcion_producto')" class="p-3 cursor-pointer hover:text-slate-900">Descripción</th>
+                        <th @click="sortDashBy('renglon')" class="p-3 cursor-pointer hover:text-slate-900">Renglón</th>
+                        <th @click="sortDashBy('cantidad')" class="p-3 cursor-pointer hover:text-slate-900 text-right">Cantidad</th>
+                        <th class="p-3">Estado / Fecha Ingreso</th>
+                        <th @click="sortDashBy('precio_unitario')" class="p-3 cursor-pointer hover:text-slate-900 text-right">Precio Unit.</th>
+                        <th @click="sortDashBy('precio_total')" class="p-3 cursor-pointer hover:text-slate-900 text-right">Precio Total</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 bg-white">
+                      <template x-for="r in paginatedConsolidado" :key="r.numero_pedido">
+                        <tr @click="toggleExpandDashRow(r.numero_pedido)" 
+                            class="cursor-pointer transition-colors duration-150 select-none"
+                            :class="expandedDashPedido === r.numero_pedido ? 'bg-indigo-50/70 shadow-inner' : 'hover:bg-slate-50'">
+                          <td class="p-3 font-bold text-indigo-600 whitespace-nowrap" x-text="r.numero_pedido"></td>
+                          <td class="p-3 text-slate-700 whitespace-nowrap" x-text="r.fecha_pedido_display"></td>
+                          <td class="p-3 whitespace-nowrap">
+                            <template x-if="r.numero_orden_compra">
+                              <span class="font-mono text-slate-800 font-semibold" x-text="r.numero_orden_compra"></span>
+                            </template>
+                            <template x-if="!r.numero_orden_compra">
+                              <span class="badge-pending px-2 py-0.5 rounded text-[10px] font-bold">Pendiente</span>
+                            </template>
+                          </td>
+                          <td class="p-3 text-slate-700 font-mono whitespace-nowrap" x-text="r.codigo"></td>
+                          
+                          <!-- Descripción con multilínea (2 líneas por defecto, expandible al clic) -->
+                          <td class="p-3 text-slate-800 min-w-[200px] max-w-xs">
+                            <div class="flex items-start justify-between gap-1.5">
+                              <div :class="expandedDashPedido === r.numero_pedido ? 'line-clamp-none whitespace-normal text-slate-900 font-semibold' : 'line-clamp-2 text-slate-800'"
+                                   class="text-xs leading-snug transition-all duration-200"
+                                   :title="expandedDashPedido === r.numero_pedido ? 'Haz clic para contraer' : 'Haz clic para expandir la descripción completa'"
+                                   x-text="r.descripcion_producto"></div>
+                              <i class="fa-solid text-[10px] text-slate-400 mt-0.5 shrink-0 transition-transform duration-200"
+                                 :class="expandedDashPedido === r.numero_pedido ? 'fa-chevron-up text-indigo-600 rotate-180' : 'fa-chevron-down opacity-50'"></i>
+                            </div>
+                          </td>
+                          
+                          <td class="p-3 text-slate-700 whitespace-nowrap" x-text="r.renglon"></td>
+                          <td class="p-3 text-right font-mono text-slate-800 whitespace-nowrap" x-text="(r.cantidad || 0).toLocaleString('es-GT')"></td>
+                          <td class="p-3">
+                            <template x-if="r.estado === 'Ingresado'">
+                              <span class="badge-success px-2.5 py-1 rounded-xl text-[10px] font-bold inline-flex items-center justify-center text-center leading-tight">
+                                <i class="fa-solid fa-circle-check mr-1.5 shrink-0"></i>
+                                <span x-text="r.fecha_ingreso_display"></span>
+                              </span>
+                            </template>
+                            <template x-if="r.estado !== 'Ingresado'">
+                              <span class="badge-pending px-2.5 py-1 rounded-xl text-[10px] font-bold inline-flex items-center justify-center text-center leading-tight">
+                                <i class="fa-solid fa-clock mr-1.5 shrink-0"></i>
+                                <span>Pendiente</span>
+                              </span>
+                            </template>
+                          </td>
+                          <td class="p-3 text-right font-mono text-slate-700 whitespace-nowrap" x-text="'Q ' + (r.precio_unitario || 0).toFixed(2)"></td>
+                          <td class="p-3 text-right font-mono font-bold text-emerald-600 whitespace-nowrap" x-text="'Q ' + (r.precio_total || 0).toLocaleString('es-GT', {minimumFractionDigits:2, maximumFractionDigits:2})"></td>
+                        </tr>
+                      </template>
+                      <template x-if="filteredConsolidado.length === 0">
+                        <tr>
+                          <td colspan="10" class="p-8 text-center text-slate-400 italic">No se encontraron registros de compras con los filtros seleccionados.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                    
+                    <!-- PIE DE TABLA CON MONTO GRAN TOTAL -->
+                    <tfoot class="bg-slate-100 font-bold border-t border-slate-200">
+                      <tr>
+                        <td colspan="9" class="p-3 text-right text-slate-700 uppercase tracking-wider text-xs">Monto Gran Total:</td>
+                        <td class="p-3 text-right text-base text-emerald-700 font-mono" x-text="'Q ' + dashMontoGranTotal.toLocaleString('es-GT', {minimumFractionDigits:2, maximumFractionDigits:2})"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <!-- PAGINACIÓN DE 50 REGISTROS -->
+                <div class="flex items-center justify-between pt-2">
+                  <span class="text-xs text-slate-500">
+                    Mostrando <span x-text="((dashPage-1)*dashPerPage)+1"></span> a <span x-text="Math.min(dashPage*dashPerPage, filteredConsolidado.length)"></span> de <span x-text="filteredConsolidado.length"></span> registros
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <button @click="dashPage = Math.max(1, dashPage - 1)" :disabled="dashPage === 1"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm">Anterior</button>
+                    <span class="text-xs text-slate-600 px-2" x-text="dashPage + ' / ' + totalPages"></span>
+                    <button @click="dashPage = Math.min(totalPages, dashPage + 1)" :disabled="dashPage >= totalPages"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm">Siguiente</button>
+                  </div>
+                </div>
+
+                </div>
+              </template>
+
+            </div>
+          </template>
+
+          <!-- 2. VISTA DE ADMINISTRACIÓN DE USUARIOS -->
+          <template x-if="currentView === 'usuarios' && hasRole('Jefe de bodega')">
+            <div class="space-y-6">
+              <div class="flex justify-between items-center">
+                <p class="text-xs text-slate-500">Gestión de acceso de usuarios y asignación de perfiles</p>
+                <button @click="showUsuarioModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition">
+                  <i class="fa-solid fa-user-plus mr-2"></i> Crear Usuario
+                </button>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                    <tr>
+                      <th class="p-3">ID (Siglas)</th>
+                      <th class="p-3">Nombre Completo</th>
+                      <th class="p-3">Usuario</th>
+                      <th class="p-3">Roles Asignados</th>
+                      <th class="p-3 text-center whitespace-nowrap">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-200">
+                    <template x-for="u in usuariosList" :key="u.id_usuario">
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-bold text-indigo-600" x-text="u.id_usuario"></td>
+                        <td class="p-3 text-slate-800" x-text="u.nombre_completo"></td>
+                        <td class="p-3 text-slate-700 font-mono" x-text="u.usuario"></td>
+                        <td class="p-3">
+                          <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[11px]" x-text="u.roles_nombres || 'Sin roles'"></span>
+                        </td>
+                        <td class="p-3 text-center whitespace-nowrap">
+                          <div class="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                            <button @click="openEditUsuario(u)" title="Editar Nombre y Roles" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
+                            </button>
+                            <button @click="openPasswordModal(u)" title="Cambiar Contraseña" class="px-2.5 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-key mr-1"></i> Contraseña
+                            </button>
+                            <button @click="deleteUsuario(u.id_usuario, u.nombre_completo)" title="Eliminar Usuario" class="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-trash-can mr-1"></i> Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- 3. CATÁLOGOS: PRODUCTOS -->
+          <template x-if="currentView === 'productos' && hasRole('Encargado de pedidos')">
+            <div class="space-y-6">
+              <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="flex items-center space-x-3">
+                  <label class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-md transition flex items-center">
+                    <i class="fa-solid fa-file-excel mr-2"></i> Carga Masiva Excel
+                    <input type="file" accept=".xlsx, .xls" @change="uploadExcelProductos($event)" class="hidden">
+                  </label>
+                  <span class="text-xs text-slate-500 italic hidden md:inline">Orden columnas: codigo, descripcion, renglon</span>
+                </div>
+
+                <div class="flex items-center space-x-3 w-full sm:w-auto">
+                  <div class="relative flex-1 sm:w-72">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" x-model.debounce.150ms="productoSearch" @input="productoPage = 1" placeholder="Buscar por código o descripción..."
+                           class="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 shadow-sm">
+                  </div>
+                  <button @click="exportProductosExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition whitespace-nowrap shrink-0 flex items-center">
+                    <i class="fa-solid fa-file-excel mr-1.5"></i> Exportar Excel
+                  </button>
+                  <button @click="showProductoModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition whitespace-nowrap shrink-0">
+                    <i class="fa-solid fa-plus mr-2"></i> Nuevo Producto
+                  </button>
+                </div>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-4">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                        <th class="p-3">Código</th>
+                        <th class="p-3">Descripción</th>
+                        <th class="p-3">Renglón</th>
+                        <th class="p-3 text-center whitespace-nowrap">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="p in paginatedProductos" :key="p.codigo">
+                        <tr class="hover:bg-slate-50">
+                          <td class="p-3 font-mono font-bold text-indigo-600" x-text="p.codigo"></td>
+                          <td class="p-3 text-slate-800" x-text="p.descripcion"></td>
+                          <td class="p-3 text-slate-700 font-bold" x-text="p.renglon"></td>
+                          <td class="p-3 text-center whitespace-nowrap">
+                            <div class="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                              <button @click="openEditProducto(p)" title="Editar Producto" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold shrink-0">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
+                              </button>
+                              <button @click="deleteProducto(p.codigo, p.descripcion)" title="Eliminar Producto" class="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold shrink-0">
+                                <i class="fa-solid fa-trash-can mr-1"></i> Eliminar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                      <template x-if="filteredProductos.length === 0">
+                        <tr>
+                          <td colspan="4" class="p-8 text-center text-slate-400 italic">No se encontraron productos coincidentes.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- PAGINACIÓN DE 50 REGISTROS -->
+                <div class="flex flex-col sm:flex-row items-center justify-between pt-3 gap-3 border-t border-slate-200 mt-3">
+                  <span class="text-xs text-slate-500">
+                    Mostrando <span class="font-semibold text-slate-700" x-text="filteredProductos.length > 0 ? ((productoPage-1)*productoPerPage)+1 : 0"></span> a 
+                    <span class="font-semibold text-slate-700" x-text="Math.min(productoPage*productoPerPage, filteredProductos.length)"></span> de 
+                    <span class="font-bold text-indigo-600" x-text="filteredProductos.length.toLocaleString()"></span> productos
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <button @click="productoPage = Math.max(1, productoPage - 1)" :disabled="productoPage === 1"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm font-semibold">Anterior</button>
+                    <span class="text-xs text-slate-600 font-mono px-2" x-text="productoPage + ' / ' + totalProductoPages"></span>
+                    <button @click="productoPage = Math.min(totalProductoPages, productoPage + 1)" :disabled="productoPage >= totalProductoPages"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm font-semibold">Siguiente</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </template>
+
+          <!-- 4. CATÁLOGOS: RESPONSABLES -->
+          <template x-if="currentView === 'responsables' && hasRole('Encargado de pedidos')">
+            <div class="space-y-6">
+              <div class="flex justify-between items-center">
+                <p class="text-xs text-slate-500">Gestión de encargados responsables del proceso de compra</p>
+                <button @click="showResponsableModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition">
+                  <i class="fa-solid fa-plus mr-2"></i> Nuevo Responsable
+                </button>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden max-w-2xl bg-white">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                    <tr>
+                      <th class="p-3">ID (3 Letras)</th>
+                      <th class="p-3">Nombre Completo</th>
+                      <th class="p-3 text-center whitespace-nowrap">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-200">
+                    <template x-for="r in responsablesList" :key="r.id_responsable">
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-bold text-indigo-600" x-text="r.id_responsable"></td>
+                        <td class="p-3 text-slate-800" x-text="r.nombre_completo"></td>
+                        <td class="p-3 text-center whitespace-nowrap">
+                          <div class="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                            <button @click="openEditResponsable(r)" title="Editar Responsable" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
+                            </button>
+                            <button @click="deleteResponsable(r.id_responsable, r.nombre_completo)" title="Eliminar Responsable" class="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-trash-can mr-1"></i> Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- 5. CATÁLOGOS: TIPO DE COMPRA -->
+          <template x-if="currentView === 'tipocompra' && hasRole('Encargado de pedidos')">
+            <div class="space-y-6">
+              <div class="flex justify-between items-center">
+                <p class="text-xs text-slate-500">Modalidades y tipos de adquisición</p>
+                <button @click="showTipoCompraModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition">
+                  <i class="fa-solid fa-plus mr-2"></i> Nuevo Tipo Compra
+                </button>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden max-w-2xl bg-white">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                    <tr>
+                      <th class="p-3">ID (3 Siglas)</th>
+                      <th class="p-3">Nombre Tipo de Compra</th>
+                      <th class="p-3 text-center whitespace-nowrap">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-200">
+                    <template x-for="t in tiposCompraList" :key="t.id_tipo_compra">
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-bold text-indigo-600" x-text="t.id_tipo_compra"></td>
+                        <td class="p-3 text-slate-800" x-text="t.nombre_tipo"></td>
+                        <td class="p-3 text-center whitespace-nowrap">
+                          <div class="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                            <button @click="openEditTipoCompra(t)" title="Editar Tipo de Compra" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
+                            </button>
+                            <button @click="deleteTipoCompra(t.id_tipo_compra, t.nombre_tipo)" title="Eliminar Tipo de Compra" class="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold shrink-0">
+                              <i class="fa-solid fa-trash-can mr-1"></i> Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- 6. CATÁLOGOS: PROVEEDORES -->
+          <template x-if="currentView === 'proveedores' && hasRole('Encargado de pedidos')">
+            <div class="space-y-6">
+              <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="flex items-center space-x-3">
+                  <label class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-md transition flex items-center">
+                    <i class="fa-solid fa-file-excel mr-2"></i> Carga Masiva Excel
+                    <input type="file" accept=".xlsx, .xls" @change="uploadExcelProveedores($event)" class="hidden">
+                  </label>
+                  <span class="text-xs text-slate-500 italic hidden md:inline">Orden columnas: nit, nombre_proveedor</span>
+                </div>
+
+                <div class="flex items-center space-x-3 w-full sm:w-auto">
+                  <div class="relative flex-1 sm:w-72">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" x-model.debounce.150ms="proveedorSearch" @input="proveedorPage = 1" placeholder="Buscar por NIT o nombre..."
+                           class="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 shadow-sm">
+                  </div>
+                  <button @click="exportProveedoresExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition whitespace-nowrap shrink-0 flex items-center">
+                    <i class="fa-solid fa-file-excel mr-1.5"></i> Exportar Excel
+                  </button>
+                  <button @click="showProveedorModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition whitespace-nowrap shrink-0">
+                    <i class="fa-solid fa-plus mr-2"></i> Nuevo Proveedor
+                  </button>
+                </div>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-4">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                        <th class="p-3">NIT</th>
+                        <th class="p-3">Nombre del Proveedor</th>
+                        <th class="p-3 text-center whitespace-nowrap">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="p in paginatedProveedores" :key="p.nit">
+                        <tr class="hover:bg-slate-50">
+                          <td class="p-3 font-mono font-bold text-indigo-600" x-text="p.nit"></td>
+                          <td class="p-3 text-slate-800" x-text="p.nombre_proveedor"></td>
+                          <td class="p-3 text-center whitespace-nowrap">
+                            <div class="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                              <button @click="openEditProveedor(p)" title="Editar Proveedor" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold shrink-0">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
+                              </button>
+                              <button @click="deleteProveedor(p.nit, p.nombre_proveedor)" title="Eliminar Proveedor" class="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold shrink-0">
+                                <i class="fa-solid fa-trash-can mr-1"></i> Eliminar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                      <template x-if="filteredProveedores.length === 0">
+                        <tr>
+                          <td colspan="3" class="p-8 text-center text-slate-400 italic">No se encontraron proveedores coincidentes.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- PAGINACIÓN DE 50 REGISTROS PARA PROVEEDORES -->
+                <div class="flex flex-col sm:flex-row items-center justify-between pt-3 gap-3 border-t border-slate-200 mt-3">
+                  <span class="text-xs text-slate-500">
+                    Mostrando <span class="font-semibold text-slate-700" x-text="filteredProveedores.length > 0 ? ((proveedorPage-1)*proveedorPerPage)+1 : 0"></span> a 
+                    <span class="font-semibold text-slate-700" x-text="Math.min(proveedorPage*proveedorPerPage, filteredProveedores.length)"></span> de 
+                    <span class="font-bold text-indigo-600" x-text="filteredProveedores.length.toLocaleString()"></span> proveedores
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <button @click="proveedorPage = Math.max(1, proveedorPage - 1)" :disabled="proveedorPage === 1"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm font-semibold">Anterior</button>
+                    <span class="text-xs text-slate-600 font-mono px-2" x-text="proveedorPage + ' / ' + totalProveedorPages"></span>
+                    <button @click="proveedorPage = Math.min(totalProveedorPages, proveedorPage + 1)" :disabled="proveedorPage >= totalProveedorPages"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm font-semibold">Siguiente</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </template>
+
+          <!-- 7. PEDIDOS: LISTADO GENERAL -->
+          <template x-if="currentView === 'pedidos'">
+            <div class="space-y-6">
+              <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div class="flex flex-wrap items-center gap-3">
+                  <template x-if="hasRole('Encargado de pedidos')">
+                    <label class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-md transition flex items-center shrink-0">
+                      <i class="fa-solid fa-file-excel mr-2"></i> Carga Masiva Pedidos (Excel)
+                      <input type="file" accept=".xlsx, .xls" @change="uploadExcelPedidos($event)" class="hidden">
+                    </label>
+                  </template>
+                  <span class="text-xs text-slate-500">
+                    Orden columnas: numero_pedido, fecha_pedido, codigo, cantidad, justificacion
+                  </span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                  <div class="relative flex-1 lg:w-72">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" x-model.debounce.150ms="pedidoSearch" @input="pedidoPage = 1" placeholder="Buscar por pedido, código, prod, justif..."
+                           class="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 shadow-sm">
+                  </div>
+                  <button @click="exportPedidosExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition whitespace-nowrap shrink-0 flex items-center">
+                    <i class="fa-solid fa-file-excel mr-1.5"></i> Exportar Excel
+                  </button>
+                  <template x-if="hasRole('Encargado de pedidos')">
+                    <button @click="showPedidoModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition whitespace-nowrap shrink-0">
+                      <i class="fa-solid fa-plus mr-2"></i> Nuevo Pedido
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-4">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200 select-none">
+                      <tr>
+                        <th @click="sortPedidosBy('numero_pedido')" class="p-3 cursor-pointer hover:bg-slate-200 transition">
+                          No. Pedido <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'numero_pedido' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('fecha_pedido')" class="p-3 cursor-pointer hover:bg-slate-200 transition">
+                          Fecha Pedido <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'fecha_pedido' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('codigo')" class="p-3 cursor-pointer hover:bg-slate-200 transition">
+                          Código <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'codigo' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('descripcion_producto')" class="p-3 cursor-pointer hover:bg-slate-200 transition">
+                          Descripción Producto <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'descripcion_producto' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('renglon')" class="p-3 cursor-pointer hover:bg-slate-200 transition">
+                          Renglón <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'renglon' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('cantidad')" class="p-3 text-right cursor-pointer hover:bg-slate-200 transition">
+                          Cantidad <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'cantidad' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('justificacion')" class="p-3 cursor-pointer hover:bg-slate-200 transition min-w-[260px] w-1/3">
+                          Justificación <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'justificacion' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortPedidosBy('nombre_responsable')" class="p-3 cursor-pointer hover:bg-slate-200 transition">
+                          Responsable <i class="fa-solid text-[10px] ml-1" :class="pedidoSortKey === 'nombre_responsable' ? (pedidoSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <template x-if="hasRole('Encargado de pedidos')">
+                          <th class="p-3 text-center whitespace-nowrap">Acciones</th>
+                        </template>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="p in paginatedPedidos" :key="p.numero_pedido">
+                        <tr @click="expandedPedidoId = (expandedPedidoId === p.numero_pedido ? null : p.numero_pedido)"
+                            class="cursor-pointer transition select-none"
+                            :class="expandedPedidoId === p.numero_pedido ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600 shadow-sm' : 'hover:bg-slate-50'">
+                          <td class="p-3 font-bold text-indigo-600 whitespace-nowrap">
+                            <div class="flex items-center space-x-1.5">
+                              <i class="fa-solid text-[9px] transition-transform" :class="expandedPedidoId === p.numero_pedido ? 'fa-chevron-down text-indigo-600 rotate-0' : 'fa-chevron-right text-slate-300'"></i>
+                              <span x-text="p.numero_pedido"></span>
+                            </div>
+                          </td>
+                          <td class="p-3 text-slate-700 whitespace-nowrap" x-text="p.fecha_pedido_display"></td>
+                          <td class="p-3 font-mono text-slate-700 whitespace-nowrap" x-text="p.codigo"></td>
+                          <td class="p-3 text-slate-800 font-medium" 
+                              :class="expandedPedidoId === p.numero_pedido ? 'whitespace-normal break-words' : 'max-w-xs truncate'" 
+                              x-text="p.descripcion_producto"></td>
+                          <td class="p-3 text-slate-700 font-mono whitespace-nowrap" x-text="p.renglon"></td>
+                          <td class="p-3 text-right font-mono text-slate-800 font-bold whitespace-nowrap" x-text="(p.cantidad || 0).toLocaleString('es-GT')"></td>
+                          <td class="p-3 text-slate-700" 
+                              :class="expandedPedidoId === p.numero_pedido ? 'whitespace-normal break-words text-slate-900 font-medium' : 'max-w-md truncate text-slate-600'" 
+                              x-text="p.justificacion || '-'"></td>
+                          <td class="p-3 whitespace-nowrap">
+                            <span :class="p.nombre_responsable === 'Pendiente' ? 'text-amber-600 font-semibold' : 'text-slate-700 font-semibold'" x-text="p.nombre_responsable"></span>
+                          </td>
+                          <template x-if="hasRole('Encargado de pedidos')">
+                            <td class="p-3 text-center whitespace-nowrap">
+                              <div class="flex items-center justify-center space-x-1.5 whitespace-nowrap">
+                                <button @click.stop="openEditPedido(p)" title="Editar Pedido" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold shrink-0">
+                                  <i class="fa-solid fa-pen-to-square mr-1"></i> Editar
+                                </button>
+                                <button @click.stop="deletePedido(p.numero_pedido)" title="Eliminar Pedido" class="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold shrink-0">
+                                  <i class="fa-solid fa-trash-can mr-1"></i> Eliminar
+                                </button>
+                              </div>
+                            </td>
+                          </template>
+                        </tr>
+                      </template>
+                      <template x-if="filteredPedidos.length === 0">
+                        <tr>
+                          <td colspan="9" class="p-8 text-center text-slate-400 italic">No se encontraron pedidos coincidentes.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- PAGINACIÓN DE PEDIDOS -->
+                <div class="flex flex-col sm:flex-row items-center justify-between pt-3 gap-3 border-t border-slate-200 mt-3">
+                  <span class="text-xs text-slate-500">
+                    Mostrando <span class="font-semibold text-slate-700" x-text="filteredPedidos.length > 0 ? ((pedidoPage-1)*pedidoPerPage)+1 : 0"></span> a 
+                    <span class="font-semibold text-slate-700" x-text="Math.min(pedidoPage*pedidoPerPage, filteredPedidos.length)"></span> de 
+                    <span class="font-bold text-indigo-600" x-text="filteredPedidos.length.toLocaleString()"></span> pedidos
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <button @click="pedidoPage = Math.max(1, pedidoPage - 1)" :disabled="pedidoPage === 1"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm font-semibold">Anterior</button>
+                    <span class="text-xs text-slate-600 font-mono px-2" x-text="pedidoPage + ' / ' + totalPedidoPages"></span>
+                    <button @click="pedidoPage = Math.min(totalPedidoPages, pedidoPage + 1)" :disabled="pedidoPage >= totalPedidoPages"
+                            class="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-50 disabled:opacity-40 shadow-sm font-semibold">Siguiente</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </template>
+
+          <!-- 8. PEDIDOS: ASIGNACIÓN DE RESPONSABLE -->
+          <template x-if="currentView === 'asignacion' && hasRole('Encargado de pedidos')">
+            <div class="space-y-6">
+              <div class="flex justify-between items-center">
+                <p class="text-xs text-slate-500">Listado de pedidos pendientes sin responsable asignado</p>
+                <button @click="saveAsignaciones()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center">
+                  <i class="fa-solid fa-floppy-disk mr-2"></i> Guardar Asignaciones
+                </button>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200">
+                    <tr>
+                      <th class="p-3">No. Pedido</th>
+                      <th class="p-3">Fecha Pedido</th>
+                      <th class="p-3">Producto</th>
+                      <th class="p-3 text-right">Cantidad</th>
+                      <th class="p-3">Asignar Responsable</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-200">
+                    <template x-for="item in asignacionesList" :key="item.numero_pedido">
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-bold text-indigo-600" x-text="item.numero_pedido"></td>
+                        <td class="p-3 text-slate-700" x-text="item.fecha_pedido_display"></td>
+                        <td class="p-3 text-slate-800" x-text="item.descripcion_producto"></td>
+                        <td class="p-3 text-right font-mono text-slate-800" x-text="item.cantidad"></td>
+                        <td class="p-3">
+                          <select x-model="item.id_responsable" @change="markAsignacionChanged()"
+                                  class="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 w-full max-w-xs shadow-sm">
+                            <option value="">-- Seleccionar Responsable --</option>
+                            <template x-for="r in responsablesList" :key="r.id_responsable">
+                              <option :value="r.id_responsable" x-text="r.nombre_completo"></option>
+                            </template>
+                          </select>
+                        </td>
+                      </tr>
+                    </template>
+                    <template x-if="asignacionesList.length === 0">
+                      <tr>
+                        <td colspan="5" class="p-8 text-center text-emerald-600 font-semibold">
+                          <i class="fa-solid fa-circle-check text-xl mr-2"></i> ¡Excelente! Todos los pedidos tienen responsable asignado.
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <!-- 9. EJECUCIÓN COMPRAS: REGISTRAR ORDEN DE COMPRA -->
+          <template x-if="currentView === 'ordenes'">
+            <div class="space-y-6">
+              <div class="flex flex-wrap items-center justify-between gap-4">
+                <!-- Lado Izquierdo: Carga Masiva (Excel) luego texto Orden columnas -->
+                <div class="flex flex-wrap items-center gap-3">
+                  <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de compras')">
+                    <label class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-md transition flex items-center shrink-0">
+                      <i class="fa-solid fa-file-excel mr-1.5"></i> Carga Masiva (Excel)
+                      <input type="file" accept=".xlsx, .xls" @change="uploadExcelOrdenes($event)" class="hidden">
+                    </label>
+                  </template>
+                  <div class="text-[11px] text-slate-500 font-normal leading-tight">
+                    Orden columnas: numero_pedido, numero_orden_compra, tipo_compra,<br>
+                    fecha_orden, fecha_notificacion, fecha_vencimiento
+                  </div>
+                </div>
+
+                <!-- Lado Derecho: Buscador luego botón + Nueva Orden de Compra -->
+                <div class="flex items-center space-x-3">
+                  <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" x-model="ordenSearch" placeholder="Buscar orden..." class="pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs w-52 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-sm">
+                  </div>
+
+                  <button @click="exportOrdenesExcel()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center shrink-0">
+                    <i class="fa-solid fa-file-excel mr-1.5"></i> Exportar Excel
+                  </button>
+
+                  <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de compras')">
+                    <button @click="openCreateOrdenModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center shrink-0">
+                      <i class="fa-solid fa-plus mr-1.5"></i> + Nueva Orden de Compra
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-2.5">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200 select-none">
+                      <tr>
+                        <th @click="sortOrdenesBy('numero_pedido')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          No. Pedido <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'numero_pedido' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('fecha_pedido')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Pedido <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'fecha_pedido' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('codigo')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Código <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'codigo' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('descripcion_producto')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition max-w-[140px]">
+                          Descripción <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'descripcion_producto' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('cantidad')" class="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Cantidad <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'cantidad' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('numero_orden_compra')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          No. Orden <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'numero_orden_compra' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('nombre_tipo')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Tipo <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'nombre_tipo' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('fecha_orden')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Orden <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'fecha_orden' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('fecha_notificacion')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Notif. <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'fecha_notificacion' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortOrdenesBy('fecha_vencimiento')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Venc. <i class="fa-solid text-[9px] ml-0.5" :class="ordenSortKey === 'fecha_vencimiento' ? (ordenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de compras')">
+                          <th class="px-2 py-2 text-center whitespace-nowrap">Acciones</th>
+                        </template>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="o in paginatedOrdenes" :key="o.numero_orden_compra">
+                        <tr class="hover:bg-slate-50 transition">
+                          <td class="px-2 py-2 font-bold text-indigo-600 whitespace-nowrap" x-text="o.numero_pedido"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="o.fecha_pedido_display || '-'"></td>
+                          <td class="px-2 py-2 font-mono text-slate-700 whitespace-nowrap" x-text="o.codigo || '-'"></td>
+                          <td class="px-2 py-2 text-slate-800 font-medium max-w-[140px] truncate" :title="o.descripcion_producto" x-text="o.descripcion_producto || '-'"></td>
+                          <td class="px-2 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap" x-text="(o.cantidad || 0).toLocaleString('es-GT')"></td>
+                          <td class="px-2 py-2 font-mono font-bold text-slate-800 whitespace-nowrap" x-text="o.numero_orden_compra"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="o.nombre_tipo || o.id_tipo_compra"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="o.fecha_orden_display || '-'"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="o.fecha_notificacion_display || '-'"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="o.fecha_vencimiento_display || '-'"></td>
+                          <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de compras')">
+                            <td class="px-2 py-2 text-center whitespace-nowrap">
+                              <div class="flex items-center justify-center space-x-1 whitespace-nowrap">
+                                <button @click="openEditOrden(o)" title="Editar Orden" class="px-2 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-[10px] font-semibold shrink-0">
+                                  <i class="fa-solid fa-pen-to-square"></i> Editar
+                                </button>
+                                <button @click="deleteOrden(o.numero_orden_compra)" title="Eliminar Orden" class="px-2 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-[10px] font-semibold shrink-0">
+                                  <i class="fa-solid fa-trash-can"></i> Eliminar
+                                </button>
+                              </div>
+                            </td>
+                          </template>
+                        </tr>
+                      </template>
+                      <template x-if="filteredOrdenes.length === 0">
+                        <tr>
+                          <td colspan="10" class="p-8 text-center text-slate-400 italic">No se encontraron órdenes de compra coincidentes.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- PAGINACIÓN DE ÓRDENES DE COMPRA -->
+                <div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-slate-50 border-t border-slate-200 gap-3">
+                  <div class="text-xs text-slate-500">
+                    Mostrando <span class="font-bold text-slate-800" x-text="filteredOrdenes.length === 0 ? 0 : (ordenPage - 1) * ordenPerPage + 1"></span> a <span class="font-bold text-slate-800" x-text="Math.min(ordenPage * ordenPerPage, filteredOrdenes.length)"></span> de <span class="font-bold text-slate-800" x-text="filteredOrdenes.length"></span> órdenes
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <button @click="ordenPage = Math.max(1, ordenPage - 1)" :disabled="ordenPage === 1" class="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                    <span class="text-xs text-slate-600 font-semibold px-2" x-text="'Pág. ' + ordenPage + ' / ' + totalOrdenPages"></span>
+                    <button @click="ordenPage = Math.min(totalOrdenPages, ordenPage + 1)" :disabled="ordenPage === totalOrdenPages" class="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </template>
+
+          <!-- 10. EJECUCIÓN COMPRAS: ENTREGA / RECEPCIÓN ORDEN DE COMPRA -->
+          <template x-if="currentView === 'entrega_orden'">
+            <div class="space-y-6">
+              <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex flex-wrap items-center gap-3">
+                  <!-- Filtro para Encargado de pedidos -->
+                  <template x-if="hasRole('Encargado de pedidos') || hasRole('Jefe de bodega') || hasRole('Encargado de compras')">
+                    <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 shadow-sm transition hover:bg-amber-100">
+                      <input type="checkbox" x-model="soloPendientesEntrega" @change="if(soloPendientesEntrega) soloPendientesRecepcion = false" class="rounded text-amber-600 focus:ring-amber-500">
+                      <span class="font-semibold text-amber-900"><i class="fa-solid fa-filter mr-1 text-amber-600"></i> Mostrar solo pendientes de entregar</span>
+                    </label>
+                  </template>
+
+                  <!-- Filtro para Encargado de ingresos -->
+                  <template x-if="hasRole('Encargado de ingresos') || hasRole('Jefe de bodega') || hasRole('Encargado de compras')">
+                    <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-sm transition hover:bg-emerald-100">
+                      <input type="checkbox" x-model="soloPendientesRecepcion" @change="if(soloPendientesRecepcion) soloPendientesEntrega = false" class="rounded text-emerald-600 focus:ring-emerald-500">
+                      <span class="font-semibold text-emerald-900"><i class="fa-solid fa-filter mr-1 text-emerald-600"></i> Mostrar solo pendientes de recibir</span>
+                    </label>
+                  </template>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                  <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" x-model="entregaOrdenSearch" placeholder="Buscar orden o pedido..." class="pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs w-56 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-sm">
+                  </div>
+                  <button @click="exportEntregaOrdenesExcel()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center shrink-0">
+                    <i class="fa-solid fa-file-excel mr-1.5"></i> Exportar Excel
+                  </button>
+                </div>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-2.5">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200 select-none">
+                      <tr>
+                        <th @click="sortEntregaOrdenesBy('numero_pedido')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          No. Pedido <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'numero_pedido' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('fecha_pedido')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Pedido <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'fecha_pedido' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('descripcion_producto')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition max-w-[130px]">
+                          Descripción <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'descripcion_producto' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('cantidad')" class="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Cantidad <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'cantidad' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('fecha_orden')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Orden <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'fecha_orden' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('numero_orden_compra')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          No. Orden <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'numero_orden_compra' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('fecha_entrega')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Entrega <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'fecha_entrega' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('nombre_usuario_entrego')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Usuario Que Entregó <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'nombre_usuario_entrego' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('fecha_recepcion')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Recepción <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'fecha_recepcion' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaOrdenesBy('nombre_usuario_recibio')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Usuario Que Recibió <i class="fa-solid text-[9px] ml-0.5" :class="entregaOrdenSortKey === 'nombre_usuario_recibio' ? (entregaOrdenSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th class="px-2 py-2 text-center whitespace-nowrap">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="row in paginatedEntregaOrdenes" :key="row.numero_orden_compra">
+                        <tr class="hover:bg-slate-50 transition">
+                          <td class="px-2 py-2 font-bold text-indigo-600 whitespace-nowrap" x-text="row.numero_pedido"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="row.fecha_pedido_display || '-'"></td>
+                          <td class="px-2 py-2 text-slate-800 font-medium max-w-[130px] truncate" :title="row.descripcion_producto" x-text="row.descripcion_producto || '-'"></td>
+                          <td class="px-2 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap" x-text="(row.cantidad || 0).toLocaleString('es-GT')"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap font-medium" x-text="row.fecha_orden_display || '-'"></td>
+                          <td class="px-2 py-2 font-mono font-bold text-slate-800 whitespace-nowrap" x-text="row.numero_orden_compra"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap">
+                            <template x-if="row.fecha_entrega_display">
+                              <div class="flex items-center space-x-1">
+                                <span class="text-slate-800 font-medium" x-text="row.fecha_entrega_display"></span>
+                                <template x-if="hasRole('Jefe de bodega')">
+                                  <button @click="eliminarEntrega(row.numero_orden_compra)" title="Eliminar Entrega (Solo Jefe de bodega)" class="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-semibold shrink-0 ml-1">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                  </button>
+                                </template>
+                              </div>
+                            </template>
+                            <template x-if="!row.fecha_entrega_display">
+                              <span class="text-amber-600 font-semibold">Pendiente</span>
+                            </template>
+                          </td>
+                          <td class="px-2 py-2 text-slate-800 font-semibold whitespace-nowrap" x-text="row.nombre_usuario_entrego || row.usuario_entrego || 'N/A'"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap">
+                            <template x-if="row.fecha_recepcion_display">
+                              <div class="flex items-center space-x-1">
+                                <span class="text-slate-800 font-medium" x-text="row.fecha_recepcion_display"></span>
+                                <template x-if="hasRole('Jefe de bodega')">
+                                  <button @click="eliminarRecepcion(row.numero_orden_compra)" title="Eliminar Recepción (Solo Jefe de bodega)" class="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[10px] font-semibold shrink-0 ml-1">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                  </button>
+                                </template>
+                              </div>
+                            </template>
+                            <template x-if="!row.fecha_recepcion_display">
+                              <span class="text-slate-400 italic">Pendiente</span>
+                            </template>
+                          </td>
+                          <td class="px-2 py-2 text-slate-800 font-semibold whitespace-nowrap" x-text="row.nombre_usuario_recibio || row.usuario || 'N/A'"></td>
+                          <td class="p-2.5 text-center whitespace-nowrap">
+                            <!-- Botón Entregar (Encargado de Pedidos) -->
+                            <template x-if="hasRole('Encargado de pedidos') && !row.fecha_entrega">
+                              <button @click="registrarEntrega(row.numero_orden_compra)" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm">
+                                <i class="fa-solid fa-truck mr-1"></i> Entregar
+                              </button>
+                            </template>
+
+                            <!-- Botón Recibir (Encargado de Ingresos) -->
+                            <template x-if="hasRole('Encargado de ingresos') && row.fecha_entrega && !row.fecha_recepcion">
+                              <div>
+                                <!-- Misma persona prohibido recibir -->
+                                <template x-if="row.usuario_entrego && String(row.usuario_entrego).toLowerCase() === String(user ? user.usuario : '').toLowerCase()">
+                                  <span class="px-2 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-semibold inline-block" title="El usuario que realizó la entrega no puede confirmar la recepción">
+                                    <i class="fa-solid fa-lock mr-1"></i> Debe recibir otro usuario
+                                  </span>
+                                </template>
+                                <!-- Usuario distinto puede recibir -->
+                                <template x-if="!row.usuario_entrego || String(row.usuario_entrego).toLowerCase() !== String(user ? user.usuario : '').toLowerCase()">
+                                  <button @click="registrarRecepcion(row.numero_orden_compra)" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm">
+                                    <i class="fa-solid fa-check mr-1"></i> Recibir
+                                  </button>
+                                </template>
+                              </div>
+                            </template>
+                          </td>
+                        </tr>
+                      </template>
+                      <template x-if="filteredEntregaOrdenes.length === 0">
+                        <tr>
+                          <td colspan="10" class="p-8 text-center text-slate-400 italic">No se encontraron entregas/recepciones coincidentes.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- PAGINACIÓN ENTREGA DE ÓRDENES -->
+                <div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-slate-50 border-t border-slate-200 gap-3">
+                  <div class="text-xs text-slate-500">
+                    Mostrando <span class="font-bold text-slate-800" x-text="filteredEntregaOrdenes.length === 0 ? 0 : (entregaOrdenPage - 1) * entregaOrdenPerPage + 1"></span> a <span class="font-bold text-slate-800" x-text="Math.min(entregaOrdenPage * entregaOrdenPerPage, filteredEntregaOrdenes.length)"></span> de <span class="font-bold text-slate-800" x-text="filteredEntregaOrdenes.length"></span> registros
+                  </div>
+                  <div class="flex items-center space-x-2">
+                    <button @click="entregaOrdenPage = Math.max(1, entregaOrdenPage - 1)" :disabled="entregaOrdenPage === 1" class="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                    <span class="text-xs text-slate-600 font-semibold px-2" x-text="'Pág. ' + entregaOrdenPage + ' / ' + totalEntregaOrdenPages"></span>
+                    <button @click="entregaOrdenPage = Math.min(totalEntregaOrdenPages, entregaOrdenPage + 1)" :disabled="entregaOrdenPage === totalEntregaOrdenPages" class="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </template>
+
+          <!-- 11. EJECUCIÓN COMPRAS: ENTREGA EXPEDIENTE -->
+          <template x-if="currentView === 'entrega_expediente'">
+            <div class="space-y-5">
+              <!-- Controles superiores -->
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-3">
+                  <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 shadow-sm transition hover:bg-amber-100">
+                    <input type="checkbox" x-model="soloPendientesExpediente" class="rounded text-amber-600 focus:ring-amber-500">
+                    <span class="font-semibold text-amber-900"><i class="fa-solid fa-filter mr-1 text-amber-600"></i> Mostrar solo pendientes de entregar</span>
+                  </label>
+                </div>
+                <div class="flex items-center space-x-3">
+                  <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                    <input type="text" x-model="entregaExpedienteSearch" placeholder="Buscar orden, pedido, código..." class="pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs w-60 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-sm">
+                  </div>
+                  <button @click="exportEntregaExpedientesExcel()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition flex items-center shrink-0">
+                    <i class="fa-solid fa-file-excel mr-1.5"></i> Exportar Excel
+                  </button>
+                </div>
+              </div>
+
+              <!-- Tabla -->
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-2.5">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200 select-none">
+                      <tr>
+                        <th @click="sortEntregaExpedientesBy('numero_pedido')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          No. Pedido <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'numero_pedido' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('fecha_pedido')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Pedido <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'fecha_pedido' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('codigo')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Código <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'codigo' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('descripcion_producto')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition max-w-[130px]">
+                          Descripción <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'descripcion_producto' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('cantidad')" class="px-2 py-2 text-right cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Cantidad <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'cantidad' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('numero_orden_compra')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          No. Orden <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'numero_orden_compra' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('fecha_entrega_expediente')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Fecha Entrega Exp. <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'fecha_entrega_expediente' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th @click="sortEntregaExpedientesBy('nombre_usuario_expediente')" class="px-2 py-2 cursor-pointer hover:bg-slate-200 transition whitespace-nowrap">
+                          Usuario Que Entregó <i class="fa-solid text-[9px] ml-0.5" :class="entregaExpedienteSortKey === 'nombre_usuario_expediente' ? (entregaExpedienteSortDir === 'asc' ? 'fa-arrow-up text-indigo-600' : 'fa-arrow-down text-indigo-600') : 'fa-sort opacity-30'"></i>
+                        </th>
+                        <th class="px-2 py-2 text-center whitespace-nowrap">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="row in paginatedEntregaExpedientes" :key="row.numero_orden_compra">
+                        <tr class="hover:bg-slate-50 transition">
+                          <td class="px-2 py-2 font-bold text-indigo-600 whitespace-nowrap" x-text="row.numero_pedido"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="row.fecha_pedido_display || '-'"></td>
+                          <td class="px-2 py-2 font-mono text-slate-700 whitespace-nowrap" x-text="row.codigo || '-'"></td>
+                          <td class="px-2 py-2 text-slate-800 font-medium max-w-[130px] truncate" :title="row.descripcion_producto" x-text="row.descripcion_producto || '-'"></td>
+                          <td class="px-2 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap" x-text="(row.cantidad || 0).toLocaleString('es-GT')"></td>
+                          <td class="px-2 py-2 font-mono font-bold text-slate-800 whitespace-nowrap" x-text="row.numero_orden_compra"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap">
+                            <template x-if="row.fecha_entrega_expediente_display">
+                              <span class="text-slate-800 font-medium" x-text="row.fecha_entrega_expediente_display"></span>
+                            </template>
+                            <template x-if="!row.fecha_entrega_expediente_display">
+                              <span class="text-amber-600 font-semibold">Pendiente</span>
+                            </template>
+                          </td>
+                          <td class="px-2 py-2 text-slate-800 font-semibold whitespace-nowrap" x-text="row.nombre_usuario_expediente || row.usuario || 'N/A'"></td>
+                          <td class="px-2 py-2 text-center whitespace-nowrap">
+                            <!-- Botón Entregar Expediente (Encargado de pedidos) -->
+                            <template x-if="hasRole('Encargado de pedidos') && !row.fecha_entrega_expediente">
+                              <button @click="registrarEntregaExpediente(row.numero_orden_compra)" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm">
+                                <i class="fa-solid fa-folder-plus mr-1"></i> Entregar
+                              </button>
+                            </template>
+                            <!-- Botón Eliminar Entrega (Solo Jefe de bodega) -->
+                            <template x-if="hasRole('Jefe de bodega') && row.fecha_entrega_expediente">
+                              <button @click="eliminarEntregaExpediente(row.numero_orden_compra)" title="Eliminar Entrega de Expediente" class="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-semibold">
+                                <i class="fa-solid fa-trash-can"></i>
+                              </button>
+                            </template>
+                          </td>
+                        </tr>
+                      </template>
+                      <template x-if="filteredEntregaExpedientes.length === 0">
+                        <tr>
+                          <td colspan="9" class="p-8 text-center text-slate-400 italic">No se encontraron expedientes coincidentes.</td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Paginación -->
+              <div x-show="totalEntregaExpedientePages > 1" class="flex items-center justify-between mt-2">
+                <span class="text-xs text-slate-500">Página <span x-text="entregaExpedientePage"></span> de <span x-text="totalEntregaExpedientePages"></span></span>
+                <div class="flex gap-2">
+                  <button @click="entregaExpedientePage = Math.max(1, entregaExpedientePage - 1)" :disabled="entregaExpedientePage === 1" class="px-3 py-1 rounded-lg text-xs bg-slate-100 hover:bg-slate-200 disabled:opacity-40 transition">Anterior</button>
+                  <button @click="entregaExpedientePage = Math.min(totalEntregaExpedientePages, entregaExpedientePage + 1)" :disabled="entregaExpedientePage === totalEntregaExpedientePages" class="px-3 py-1 rounded-lg text-xs bg-slate-100 hover:bg-slate-200 disabled:opacity-40 transition">Siguiente</button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 12. EJECUCIÓN COMPRAS: RECEPCIÓN DE COMPRA Y FACTURA -->
+          <template x-if="currentView === 'recepcion_compra'">
+            <div class="space-y-5">
+              <div class="flex justify-between items-center flex-wrap gap-3">
+                <p class="text-xs text-slate-500">Registro final de datos de factura, proveedor e ingreso de la compra</p>
+                <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de ingresos') || hasRole('Encargado de recepción')">
+                  <button @click="showRecepcionCompraModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition">
+                    <i class="fa-solid fa-plus mr-2"></i> Registrar Recepción de Compra
+                  </button>
+                </template>
+              </div>
+
+              <div class="glass-card rounded-2xl border border-slate-200 overflow-hidden bg-white p-2.5">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200 select-none">
+                      <tr>
+                        <th class="px-2 py-2 whitespace-nowrap">No. Pedido</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Fecha Pedido</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Código</th>
+                        <th class="px-2 py-2 max-w-[130px]">Descripción</th>
+                        <th class="px-2 py-2 text-right whitespace-nowrap">Cantidad</th>
+                        <th class="px-2 py-2 whitespace-nowrap">No. Orden</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Fecha Ingreso</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Serie Factura</th>
+                        <th class="px-2 py-2 whitespace-nowrap">No. Factura</th>
+                        <th class="px-2 py-2 whitespace-nowrap">NIT</th>
+                        <th class="px-2 py-2 whitespace-nowrap">Proveedor</th>
+                        <th class="px-2 py-2 text-right whitespace-nowrap">P. Unitario</th>
+                        <th class="px-2 py-2 text-right whitespace-nowrap">P. Total</th>
+                        <th class="px-2 py-2 text-center whitespace-nowrap">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                      <template x-for="r in recepcionesCompraList" :key="r.id_recepcion_compra">
+                        <tr class="hover:bg-slate-50 transition">
+                          <td class="px-2 py-2 font-bold text-indigo-600 whitespace-nowrap" x-text="r.numero_pedido"></td>
+                          <td class="px-2 py-2 text-slate-700 whitespace-nowrap" x-text="r.fecha_pedido_display || '-'"></td>
+                          <td class="px-2 py-2 font-mono text-slate-700 whitespace-nowrap" x-text="r.codigo || '-'"></td>
+                          <td class="px-2 py-2 text-slate-800 font-medium max-w-[130px] truncate" :title="r.descripcion_producto" x-text="r.descripcion_producto || '-'"></td>
+                          <td class="px-2 py-2 text-right font-mono font-bold text-slate-800 whitespace-nowrap" x-text="(r.cantidad || 0).toLocaleString('es-GT')"></td>
+                          <td class="px-2 py-2 font-mono font-bold text-slate-800 whitespace-nowrap" x-text="r.numero_orden_compra"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap" x-text="r.fecha_ingreso_display"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap" x-text="r.serie_factura || '-'"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap" x-text="r.numero_factura || '-'"></td>
+                          <td class="px-2 py-2 text-slate-700 font-mono whitespace-nowrap" x-text="r.nit"></td>
+                          <td class="px-2 py-2 text-slate-800 whitespace-nowrap" x-text="r.nombre_proveedor || '-'"></td>
+                          <td class="px-2 py-2 text-right font-mono text-slate-700 whitespace-nowrap" x-text="'Q ' + (r.precio_unitario || 0).toFixed(2)"></td>
+                          <td class="px-2 py-2 text-right font-mono font-bold text-emerald-600 whitespace-nowrap" x-text="'Q ' + (r.precio_total || 0).toLocaleString('es-GT', {minimumFractionDigits:2, maximumFractionDigits:2})"></td>
+                          <td class="px-2 py-2 text-center whitespace-nowrap">
+                            <div class="flex items-center justify-center gap-1">
+                              <!-- Editar -->
+                              <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de ingresos') || hasRole('Encargado de recepción') || hasRole('Jefe de bodega')">
+                                <button @click="editRecepcionCompra(r)" title="Editar recepción"
+                                  class="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[10px] font-semibold transition">
+                                  <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                              </template>
+                              <!-- Eliminar -->
+                              <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de ingresos') || hasRole('Jefe de bodega')">
+                                <button @click="deleteRecepcionCompra(r.id_recepcion_compra, r.numero_orden_compra)" title="Eliminar recepción"
+                                  class="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-semibold transition">
+                                  <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                              </template>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                      <template x-if="recepcionesCompraList.length === 0">
+                        <tr><td colspan="14" class="p-8 text-center text-slate-400 italic">No hay recepciones registradas.</td></tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </template>
+
+        </div>
+      </main>
+
+    </div>
+  </template>
+
+  <!-- MODALES DE CREACIÓN Y EDICIÓN (Tema Claro) -->
+
+  <!-- MODAL: EDITAR RECEPCIÓN DE COMPRA -->
+  <div x-show="showEditRecepcionCompraModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-lg w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-1">Editar Recepción de Compra</h3>
+      <p class="text-xs text-slate-500 mb-4">
+        Orden: <span x-text="editRecepcionCompraData.numero_orden_compra" class="font-mono font-bold text-indigo-700"></span>
+        &nbsp;·&nbsp; Pedido #<span x-text="editRecepcionCompraData.numero_pedido" class="font-bold"></span>
+      </p>
+
+      <!-- Resumen del pedido -->
+      <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 grid grid-cols-3 gap-2 text-[11px] mb-4">
+        <div>
+          <p class="text-slate-400 font-semibold uppercase text-[10px] mb-0.5">Código</p>
+          <p class="font-mono font-bold text-slate-800" x-text="editRecepcionCompraData.codigo || '-'"></p>
+        </div>
+        <div>
+          <p class="text-slate-400 font-semibold uppercase text-[10px] mb-0.5">Descripción</p>
+          <p class="font-medium text-slate-800 truncate" :title="editRecepcionCompraData.descripcion_producto" x-text="editRecepcionCompraData.descripcion_producto || '-'"></p>
+        </div>
+        <div>
+          <p class="text-slate-400 font-semibold uppercase text-[10px] mb-0.5">Cantidad</p>
+          <p class="font-bold text-indigo-700" x-text="(editRecepcionCompraData.cantidad || 0).toLocaleString('es-GT')"></p>
+        </div>
+      </div>
+
+      <form @submit.prevent="saveEditRecepcionCompra()" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Ingreso</label>
+            <input type="date" x-model="editRecepcionCompraData.fecha_ingreso" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Proveedor actual</label>
+            <p class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700">
+              <span class="font-mono font-bold text-indigo-700" x-text="editRecepcionCompraData.nit"></span>
+              &nbsp;— <span x-text="editRecepcionCompraData.nombre_proveedor"></span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Cambiar Proveedor -->
+        <div x-data="{ editNitSearch: '', editNitDropOpen: false }">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Cambiar Proveedor (NIT)</label>
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+            <input type="text" x-model="editNitSearch"
+              @input="editNitDropOpen = editNitSearch.trim().length > 0"
+              @keydown.escape="editNitDropOpen = false"
+              placeholder="Ingrese NIT para buscar..."
+              class="pl-8 pr-3 py-2 w-full bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-amber-400 focus:outline-none">
+            <div x-show="editNitDropOpen" @click.outside="editNitDropOpen = false"
+              class="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-40 overflow-y-auto">
+              <template x-for="p in proveedoresList.filter(p => {
+                const t = editNitSearch.trim();
+                if (!t) return false;
+                const n = String(p.nit);
+                return editNitSearch.endsWith(' ') ? n === t : n.startsWith(t);
+              })" :key="p.nit">
+                <button type="button"
+                  @click="editRecepcionCompraData.nit = p.nit; editRecepcionCompraData.nombre_proveedor = p.nombre_proveedor; editNitSearch = p.nit + ' — ' + p.nombre_proveedor; editNitDropOpen = false"
+                  class="w-full text-left px-4 py-2 hover:bg-amber-50 text-xs border-b border-slate-100 last:border-0">
+                  <span class="font-bold text-indigo-700 font-mono mr-2" x-text="p.nit"></span>
+                  <span class="text-slate-700" x-text="p.nombre_proveedor"></span>
+                </button>
+              </template>
+              <template x-if="proveedoresList.filter(p => { const t=editNitSearch.trim(); if(!t) return false; const n=String(p.nit); return editNitSearch.endsWith(' ') ? n===t : n.startsWith(t); }).length === 0">
+                <div class="px-4 py-3 text-xs text-slate-400 italic">No se encontraron proveedores</div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Serie Factura</label>
+            <input type="text" x-model="editRecepcionCompraData.serie_factura" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">No. Factura</label>
+            <input type="text" x-model="editRecepcionCompraData.numero_factura" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Precio Unitario (Q)</label>
+            <input type="number" step="0.01" x-model="editRecepcionCompraData.precio_unitario" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditRecepcionCompraModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-xs"><i class="fa-solid fa-floppy-disk mr-1"></i> Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CREAR USUARIO -->
+
+  <div x-show="showUsuarioModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Crear Nuevo Usuario</h3>
+      <form @submit.prevent="saveUsuario()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ID (Siglas de 3 letras)</label>
+          <input type="text" maxlength="3" x-model="newUsuario.id_usuario" placeholder="EJ: JSL" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs uppercase text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre Completo</label>
+          <input type="text" x-model="newUsuario.nombre_completo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre de Usuario</label>
+          <input type="text" x-model="newUsuario.usuario" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Contraseña</label>
+          <input type="password" x-model="newUsuario.password" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-2">Asignar Roles</label>
+          <div class="space-y-1.5">
+            <template x-for="role in rolesList" :key="role.id_rol">
+              <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer select-none">
+                <input type="checkbox" 
+                       :checked="isNewRoleSelected(role.id_rol)" 
+                       @change="toggleNewRole(role.id_rol)" 
+                       class="rounded bg-slate-50 border-slate-300 text-indigo-600 focus:ring-0">
+                <span x-text="role.nombre_rol"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showUsuarioModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar Usuario</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR USUARIO -->
+  <div x-show="showEditUsuarioModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Usuario (<span x-text="editUsuario.id_usuario" class="text-indigo-600"></span>)</h3>
+        <button @click="showEditUsuarioModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updateUsuario()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre Completo</label>
+          <input type="text" x-model="editUsuario.nombre_completo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre de Usuario</label>
+          <input type="text" x-model="editUsuario.usuario" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-2">Asignar Roles</label>
+          <div class="space-y-1.5">
+            <template x-for="role in rolesList" :key="role.id_rol">
+              <label class="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer select-none">
+                <input type="checkbox" 
+                       :checked="isEditRoleSelected(role.id_rol)" 
+                       @change="toggleEditRole(role.id_rol)" 
+                       class="rounded bg-slate-50 border-slate-300 text-indigo-600 focus:ring-0">
+                <span x-text="role.nombre_rol"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditUsuarioModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Usuario</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ACTUALIZAR CONTRASEÑA -->
+  <div x-show="showPasswordModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Cambiar Contraseña</h3>
+        <button @click="showPasswordModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">Actualizar clave para: <strong class="text-slate-800" x-text="passwordData.nombre_completo + ' (' + passwordData.id_usuario + ')'"></strong></p>
+      <form @submit.prevent="savePassword()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nueva Contraseña</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><i class="fa-solid fa-lock text-xs"></i></span>
+            <input type="password" x-model="passwordData.password" placeholder="Ingrese nueva contraseña..." required class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-indigo-500">
+          </div>
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showPasswordModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-xs shadow-md shadow-amber-600/20">Guardar Contraseña</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO PRODUCTO -->
+  <div x-show="showProductoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Registrar Nuevo Producto</h3>
+      <form @submit.prevent="saveProducto()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Código del Producto</label>
+          <input type="text" x-model="newProducto.codigo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Descripción</label>
+          <textarea x-model="newProducto.descripcion" required rows="3" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Renglón Presupuestario</label>
+          <input type="text" x-model="newProducto.renglon" placeholder="Ej. 266" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showProductoModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar Producto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR PRODUCTO -->
+  <div x-show="showEditProductoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Producto (<span x-text="editProducto.codigo" class="text-indigo-600"></span>)</h3>
+        <button @click="showEditProductoModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updateProducto()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Descripción</label>
+          <textarea x-model="editProducto.descripcion" required rows="3" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Renglón Presupuestario</label>
+          <input type="text" x-model="editProducto.renglon" placeholder="Ej. 266" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditProductoModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Producto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO RESPONSABLE -->
+  <div x-show="showResponsableModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Registrar Nuevo Responsable</h3>
+      <form @submit.prevent="saveResponsable()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ID (3 Letras)</label>
+          <input type="text" maxlength="3" x-model="newResponsable.id_responsable" placeholder="Ej. ANA" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs uppercase text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre Completo</label>
+          <input type="text" x-model="newResponsable.nombre_completo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showResponsableModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR RESPONSABLE -->
+  <div x-show="showEditResponsableModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Responsable (<span x-text="editResponsable.id_responsable" class="text-indigo-600"></span>)</h3>
+        <button @click="showEditResponsableModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updateResponsable()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre Completo</label>
+          <input type="text" x-model="editResponsable.nombre_completo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditResponsableModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Responsable</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO TIPO COMPRA -->
+  <div x-show="showTipoCompraModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Registrar Tipo de Compra</h3>
+      <form @submit.prevent="saveTipoCompra()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">ID (3 Siglas)</label>
+          <input type="text" maxlength="3" x-model="newTipoCompra.id_tipo_compra" placeholder="Ej. CD" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs uppercase text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre del Tipo de Compra</label>
+          <input type="text" x-model="newTipoCompra.nombre_tipo" placeholder="Ej. Compra Directa" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showTipoCompraModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR TIPO COMPRA -->
+  <div x-show="showEditTipoCompraModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Tipo de Compra (<span x-text="editTipoCompra.id_tipo_compra" class="text-indigo-600"></span>)</h3>
+        <button @click="showEditTipoCompraModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updateTipoCompra()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre del Tipo de Compra</label>
+          <input type="text" x-model="editTipoCompra.nombre_tipo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditTipoCompraModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Tipo de Compra</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO PROVEEDOR -->
+  <div x-show="showProveedorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Registrar Proveedor</h3>
+      <form @submit.prevent="saveProveedor()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">NIT</label>
+          <input type="text" x-model="newProveedor.nit" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre del Proveedor</label>
+          <input type="text" x-model="newProveedor.nombre_proveedor" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showProveedorModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR PROVEEDOR -->
+  <div x-show="showEditProveedorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Proveedor (NIT: <span x-text="editProveedor.nit" class="text-indigo-600 font-mono"></span>)</h3>
+        <button @click="showEditProveedorModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updateProveedor()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre del Proveedor</label>
+          <input type="text" x-model="editProveedor.nombre_proveedor" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditProveedorModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Proveedor</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO PEDIDO -->
+  <div x-show="showPedidoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Registrar Nuevo Pedido</h3>
+        <button @click="showPedidoModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="savePedido()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">No. Pedido</label>
+          <input type="number" x-model="newPedido.numero_pedido" placeholder="Ej. 1008" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Pedido</label>
+          <input type="date" x-model="newPedido.fecha_pedido" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Código Producto</label>
+          <input type="text" x-model="newPedido.codigo" placeholder="Ej. 7" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Cantidad</label>
+          <input type="number" min="1" x-model="newPedido.cantidad" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Justificación / Motivo</label>
+          <textarea x-model="newPedido.justificacion" rows="2" placeholder="Ej. Programación Cuatrimestral" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800"></textarea>
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showPedidoModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar Pedido</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR PEDIDO -->
+  <div x-show="showEditPedidoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Pedido No. <span x-text="editPedido.numero_pedido" class="text-indigo-600"></span></h3>
+        <button @click="showEditPedidoModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updatePedido()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Pedido</label>
+          <input type="text" x-model="editPedido.fecha_pedido" placeholder="dd/mm/yyyy o yyyy-mm-dd" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Código Producto</label>
+          <input type="text" x-model="editPedido.codigo" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Cantidad</label>
+          <input type="number" min="1" x-model="editPedido.cantidad" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Justificación / Motivo</label>
+          <textarea x-model="editPedido.justificacion" rows="2" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Responsable Asignado</label>
+          <select x-model="editPedido.id_responsable" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold">
+            <option value="">-- Sin Asignar (Pendiente) --</option>
+            <template x-for="r in responsablesList" :key="r.id_responsable">
+              <option :value="r.id_responsable" x-text="r.nombre_completo + ' (' + r.id_responsable + ')'"></option>
+            </template>
+          </select>
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditPedidoModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Pedido</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVA ORDEN DE COMPRA -->
+  <div x-show="showOrdenModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Registrar Nueva Orden de Compra</h3>
+        <button @click="showOrdenModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="saveOrden()" class="space-y-4">
+        <!-- PASO 1: Seleccionar o Buscar No. Pedido -->
+        <div class="relative" @click.away="pedidoDropdownOpen = false">
+          <label class="block text-xs font-semibold text-indigo-700 mb-1 flex items-center">
+            <span class="w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center mr-1.5 font-bold">1</span>
+            Seleccionar No. Pedido
+          </label>
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+            <input type="text" 
+                   x-model="pedidoSearchModal"
+                   @focus="pedidoDropdownOpen = true"
+                   @input="pedidoDropdownOpen = true; if (!pedidoSearchModal) newOrden.numero_pedido = ''"
+                   placeholder="Teclee número (ej. '1' inicio, '1 ' espacio para exacto)..."
+                   class="w-full pl-9 pr-8 py-2 bg-indigo-50/60 border border-indigo-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            <template x-if="pedidoSearchModal">
+              <button type="button" @click="pedidoSearchModal = ''; newOrden.numero_pedido = ''; pedidoDropdownOpen = true" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </template>
+          </div>
+
+          <!-- LISTA DESPLEGABLE INTERACTIVA -->
+          <div x-show="pedidoDropdownOpen" 
+               class="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-100"
+               style="display:none;">
+            <template x-for="p in filteredPedidosForModal" :key="p.numero_pedido">
+              <div @click="newOrden.numero_pedido = p.numero_pedido; pedidoSearchModal = String(p.numero_pedido); pedidoDropdownOpen = false"
+                   class="p-2.5 hover:bg-indigo-50 cursor-pointer transition flex items-center justify-between text-xs"
+                   :class="String(newOrden.numero_pedido) === String(p.numero_pedido) ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'">
+                <div>
+                  <span class="font-bold text-indigo-600" x-text="'Pedido No. ' + p.numero_pedido"></span>
+                  <span class="ml-2 font-mono text-slate-500" x-text="p.codigo ? ('[' + p.codigo + ']') : ''"></span>
+                  <div class="text-[11px] text-slate-600 truncate max-w-[280px]" x-text="p.descripcion_producto || ''"></div>
+                </div>
+                <i class="fa-solid fa-check text-indigo-600 text-xs ml-2" x-show="String(newOrden.numero_pedido) === String(p.numero_pedido)"></i>
+              </div>
+            </template>
+            <template x-if="filteredPedidosForModal.length === 0">
+              <div class="p-3 text-xs text-slate-400 italic text-center">No se encontró ningún pedido coincidente.</div>
+            </template>
+          </div>
+        </div>
+
+        <!-- VISTA PREVIA DEL PEDIDO SELECCIONADO -->
+        <template x-if="selectedPedidoForNewOrden">
+          <div class="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl text-xs space-y-1">
+            <div class="font-bold text-indigo-900 flex justify-between">
+              <span>Pedido No. <span x-text="selectedPedidoForNewOrden.numero_pedido"></span></span>
+              <span class="font-mono text-indigo-700" x-text="'Código: ' + selectedPedidoForNewOrden.codigo"></span>
+            </div>
+            <div class="text-slate-800 font-medium truncate" x-text="selectedPedidoForNewOrden.descripcion_producto"></div>
+            <div class="text-[11px] text-slate-600 flex justify-between">
+              <span>Fecha: <span x-text="selectedPedidoForNewOrden.fecha_pedido_display || selectedPedidoForNewOrden.fecha_pedido"></span></span>
+              <span>Cant: <span class="font-bold text-slate-800" x-text="selectedPedidoForNewOrden.cantidad"></span></span>
+            </div>
+          </div>
+        </template>
+
+        <!-- PASO 2: Llenar demás campos -->
+        <div class="pt-2 border-t border-slate-200 space-y-4">
+          <label class="block text-xs font-semibold text-slate-700 flex items-center">
+            <span class="w-4 h-4 rounded-full bg-slate-600 text-white text-[10px] flex items-center justify-center mr-1.5 font-bold">2</span>
+            Completar Datos de la Orden
+          </label>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">No. Orden de Compra</label>
+            <input type="text" x-model="newOrden.numero_orden_compra" placeholder="Ej. 123123" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold font-mono text-slate-800">
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Tipo de Compra</label>
+            <select x-model="newOrden.id_tipo_compra" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+              <template x-for="tc in tiposCompraList" :key="tc.id_tipo_compra">
+                <option :value="tc.id_tipo_compra" x-text="tc.nombre_tipo + ' (' + tc.id_tipo_compra + ')'"></option>
+              </template>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Orden</label>
+              <input type="date" x-model="newOrden.fecha_orden" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs text-slate-800">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Notificación</label>
+              <input type="date" x-model="newOrden.fecha_notificacion" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs text-slate-800">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Vencimiento</label>
+              <input type="date" x-model="newOrden.fecha_vencimiento" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-2 text-xs text-slate-800">
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showOrdenModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Guardar Orden</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR ORDEN DE COMPRA -->
+  <div x-show="showEditOrdenModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-md w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-base font-bold text-slate-900">Editar Orden de Compra No. <span x-text="editOrden.numero_orden_compra" class="text-indigo-600 font-mono"></span></h3>
+        <button @click="showEditOrdenModal = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form @submit.prevent="updateOrden()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">No. Pedido Asociado</label>
+          <select x-model="editOrden.numero_pedido" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+            <template x-for="p in pedidosList" :key="p.numero_pedido">
+              <option :value="p.numero_pedido" x-text="'Pedido No. ' + p.numero_pedido + ' - ' + (p.descripcion_producto || '')"></option>
+            </template>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Tipo de Compra</label>
+          <select x-model="editOrden.id_tipo_compra" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+            <template x-for="tc in tiposCompraList" :key="tc.id_tipo_compra">
+              <option :value="tc.id_tipo_compra" x-text="tc.nombre_tipo + ' (' + tc.id_tipo_compra + ')'"></option>
+            </template>
+          </select>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Orden</label>
+            <input type="text" x-model="editOrden.fecha_orden" placeholder="dd/mm/yyyy" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Notificación</label>
+            <input type="text" x-model="editOrden.fecha_notificacion" placeholder="dd/mm/yyyy" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Vencimiento</label>
+            <input type="text" x-model="editOrden.fecha_vencimiento" placeholder="dd/mm/yyyy" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-2 text-xs text-slate-800">
+          </div>
+        </div>
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showEditOrdenModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">Actualizar Orden</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div x-show="showRecepcionCompraModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" style="display:none;">
+    <div class="glass-card max-w-lg w-full p-6 rounded-2xl border border-slate-200 animate-modal bg-white shadow-2xl">
+      <h3 class="text-base font-bold text-slate-900 mb-4">Registrar Recepción de Compra</h3>
+      <form @submit.prevent="saveRecepcionCompra()" class="space-y-4">
+
+        <!-- Buscador de No. Pedido -->
+        <div x-data="{ rcSearch: '', rcDropOpen: false, rcSelectedOrden: null }">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Buscar por No. Pedido</label>
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+            <input type="text" x-model="rcSearch"
+              @input="rcDropOpen = rcSearch.trim().length > 0"
+              @keydown.escape="rcDropOpen = false"
+              placeholder="Ingrese No. Pedido para filtrar..."
+              class="pl-8 pr-3 py-2 w-full bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+            <!-- Dropdown de resultados -->
+            <div x-show="rcDropOpen" @click.outside="rcDropOpen = false"
+              class="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+              <template x-for="o in ordenesList.filter(o => {
+                const trimmed = rcSearch.trim();
+                if (!trimmed) return false;
+                const pedStr = String(o.numero_pedido);
+                if (trimmed.endsWith(' ')) return pedStr === trimmed.trim();
+                return pedStr.startsWith(trimmed);
+              })" :key="o.numero_orden_compra">
+                <button type="button"
+                  @click="newRecepcionCompra.numero_orden_compra = o.numero_orden_compra; rcSelectedOrden = o; rcSearch = String(o.numero_pedido) + ' — ' + o.numero_orden_compra; rcDropOpen = false"
+                  class="w-full text-left px-4 py-2.5 hover:bg-indigo-50 text-xs border-b border-slate-100 last:border-0">
+                  <span class="font-bold text-indigo-700 mr-2">Pedido #<span x-text="o.numero_pedido"></span></span>
+                  <span class="text-slate-500 mr-2">Orden: <span x-text="o.numero_orden_compra" class="font-mono font-semibold text-slate-700"></span></span>
+                  <span class="text-slate-400 truncate" x-text="o.descripcion_producto"></span>
+                </button>
+              </template>
+              <template x-if="ordenesList.filter(o => { const t = rcSearch.trim(); if(!t) return false; const p=String(o.numero_pedido); return t.endsWith(' ') ? p===t.trim() : p.startsWith(t); }).length === 0">
+                <div class="px-4 py-3 text-xs text-slate-400 italic">No se encontraron coincidencias</div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Orden seleccionada + resumen del pedido -->
+          <template x-if="newRecepcionCompra.numero_orden_compra && rcSelectedOrden">
+            <div class="mt-2 space-y-1.5">
+              <!-- Fila confirmación de orden -->
+              <div class="flex items-center space-x-2">
+                <span class="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg font-semibold">
+                  <i class="fa-solid fa-check mr-1"></i> Orden: <span x-text="newRecepcionCompra.numero_orden_compra" class="font-mono"></span>
+                </span>
+                <button type="button" @click="newRecepcionCompra.numero_orden_compra = ''; rcSelectedOrden = null; rcSearch = ''" class="text-[10px] text-rose-500 hover:underline">Cambiar</button>
+              </div>
+              <!-- Resumen del pedido -->
+              <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 grid grid-cols-3 gap-2 text-[11px]">
+                <div>
+                  <p class="text-slate-400 font-semibold uppercase text-[10px] mb-0.5">Código</p>
+                  <p class="font-mono font-bold text-slate-800" x-text="rcSelectedOrden.codigo || '-'"></p>
+                </div>
+                <div>
+                  <p class="text-slate-400 font-semibold uppercase text-[10px] mb-0.5">Descripción</p>
+                  <p class="font-medium text-slate-800 truncate" :title="rcSelectedOrden.descripcion_producto" x-text="rcSelectedOrden.descripcion_producto || '-'"></p>
+                </div>
+                <div>
+                  <p class="text-slate-400 font-semibold uppercase text-[10px] mb-0.5">Cantidad</p>
+                  <p class="font-bold text-indigo-700" x-text="(rcSelectedOrden.cantidad || 0).toLocaleString('es-GT')"></p>
+                </div>
+              </div>
+            </div>
+          </template>
+          <!-- Solo confirmación si no hay objeto (modo fallback) -->
+          <template x-if="newRecepcionCompra.numero_orden_compra && !rcSelectedOrden">
+            <div class="mt-1.5 flex items-center space-x-2">
+              <span class="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg font-semibold">
+                <i class="fa-solid fa-check mr-1"></i> Orden seleccionada: <span x-text="newRecepcionCompra.numero_orden_compra" class="font-mono"></span>
+              </span>
+              <button type="button" @click="newRecepcionCompra.numero_orden_compra = ''; rcSearch = ''" class="text-[10px] text-rose-500 hover:underline">Cambiar</button>
+            </div>
+          </template>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Ingreso</label>
+            <input type="date" x-model="newRecepcionCompra.fecha_ingreso" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+
+          <!-- Buscador de Proveedor por NIT -->
+          <div x-data="{ nitSearch: '', nitDropOpen: false }">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Buscar Proveedor por NIT</label>
+            <div class="relative">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+              <input type="text" x-model="nitSearch"
+                @input="nitDropOpen = nitSearch.trim().length > 0"
+                @keydown.escape="nitDropOpen = false"
+                placeholder="Ingrese NIT para filtrar..."
+                class="pl-8 pr-3 py-2 w-full bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+              <!-- Dropdown de proveedores -->
+              <div x-show="nitDropOpen" @click.outside="nitDropOpen = false"
+                class="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                <template x-for="p in proveedoresList.filter(p => {
+                  const trimmed = nitSearch.trim();
+                  if (!trimmed) return false;
+                  const nitStr = String(p.nit);
+                  if (nitSearch.endsWith(' ')) return nitStr === trimmed;
+                  return nitStr.startsWith(trimmed);
+                })" :key="p.nit">
+                  <button type="button"
+                    @click="newRecepcionCompra.nit = p.nit; nitSearch = p.nit + ' — ' + p.nombre_proveedor; nitDropOpen = false"
+                    class="w-full text-left px-4 py-2.5 hover:bg-indigo-50 text-xs border-b border-slate-100 last:border-0">
+                    <span class="font-bold text-indigo-700 font-mono mr-2" x-text="p.nit"></span>
+                    <span class="text-slate-700" x-text="p.nombre_proveedor"></span>
+                  </button>
+                </template>
+                <template x-if="proveedoresList.filter(p => { const t = nitSearch.trim(); if(!t) return false; const n=String(p.nit); return nitSearch.endsWith(' ') ? n===t : n.startsWith(t); }).length === 0">
+                  <div class="px-4 py-3 text-xs text-slate-400 italic">No se encontraron proveedores</div>
+                </template>
+              </div>
+            </div>
+            <!-- Proveedor seleccionado -->
+            <div x-show="newRecepcionCompra.nit" class="mt-1.5 flex items-center space-x-2">
+              <span class="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg font-semibold">
+                <i class="fa-solid fa-check mr-1"></i> NIT: <span x-text="newRecepcionCompra.nit" class="font-mono"></span>
+              </span>
+              <button type="button" @click="newRecepcionCompra.nit = ''; nitSearch = ''" class="text-[10px] text-rose-500 hover:underline">Cambiar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Serie Factura</label>
+            <input type="text" x-model="newRecepcionCompra.serie_factura" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">No. Factura</label>
+            <input type="text" x-model="newRecepcionCompra.numero_factura" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Precio Unitario (Q)</label>
+            <input type="number" step="0.01" x-model="newRecepcionCompra.precio_unitario" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800">
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-3 border-t border-slate-200">
+          <button type="button" @click="showRecepcionCompraModal = false" class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold">Cancelar</button>
+          <button type="submit" :disabled="!newRecepcionCompra.numero_orden_compra" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-xl text-xs">Guardar Recepción</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</body>
+</html>
