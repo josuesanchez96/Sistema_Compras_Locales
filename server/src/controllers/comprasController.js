@@ -245,34 +245,52 @@ async function bulkOrdenesCompra(req, res) {
   let count = 0;
   try {
     const pool = await getPool();
-    for (const item of items) {
-      if (!item.numero_orden_compra || !item.numero_pedido) continue;
+    const chunkSize = 500;
 
-      const fOrden = parseToSQLDate(item.fecha_orden);
-      const fNotif = parseToSQLDate(item.fecha_notificacion);
-      const fVenc = parseToSQLDate(item.fecha_vencimiento);
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const request = pool.request();
+      const valueStrings = [];
 
-      await pool.request()
-        .input('numero_orden_compra', sql.Char(10), String(item.numero_orden_compra).trim())
-        .input('numero_pedido', sql.Int, parseInt(item.numero_pedido, 10))
-        .input('id_tipo_compra', sql.Char(3), String(item.id_tipo_compra || 'CD').toUpperCase())
-        .input('fecha_orden', sql.VarChar(10), fOrden)
-        .input('fecha_notificacion', sql.VarChar(10), fNotif)
-        .input('fecha_vencimiento', sql.VarChar(10), fVenc)
-        .query(`
-          IF NOT EXISTS (SELECT 1 FROM OrdenCompra WHERE numero_orden_compra = @numero_orden_compra)
-            INSERT INTO OrdenCompra (numero_orden_compra, numero_pedido, id_tipo_compra, fecha_orden, fecha_notificacion, fecha_vencimiento)
-            VALUES (@numero_orden_compra, @numero_pedido, @id_tipo_compra, @fecha_orden, @fecha_notificacion, @fecha_vencimiento);
-          ELSE
-            UPDATE OrdenCompra 
-            SET numero_pedido = @numero_pedido, id_tipo_compra = @id_tipo_compra, fecha_orden = @fecha_orden, fecha_notificacion = @fecha_notificacion, fecha_vencimiento = @fecha_vencimiento
-            WHERE numero_orden_compra = @numero_orden_compra;
-        `);
-      count++;
+      chunk.forEach((item, index) => {
+        if (!item.numero_orden_compra || !item.numero_pedido) return;
+
+        const paramOc = `oc_${index}`;
+        const paramPed = `ped_${index}`;
+        const paramTipo = `tip_${index}`;
+        const paramFord = `ford_${index}`;
+        const paramFnot = `fnot_${index}`;
+        const paramFven = `fven_${index}`;
+
+        request.input(paramOc, sql.Char(10), String(item.numero_orden_compra).trim());
+        request.input(paramPed, sql.Int, parseInt(item.numero_pedido, 10));
+        request.input(paramTipo, sql.Char(3), String(item.id_tipo_compra || 'CD').toUpperCase());
+        request.input(paramFord, sql.VarChar(10), parseToSQLDate(item.fecha_orden));
+        request.input(paramFnot, sql.VarChar(10), parseToSQLDate(item.fecha_notificacion));
+        request.input(paramFven, sql.VarChar(10), parseToSQLDate(item.fecha_vencimiento));
+
+        valueStrings.push(`(@${paramOc}, @${paramPed}, @${paramTipo}, @${paramFord}, @${paramFnot}, @${paramFven})`);
+      });
+
+      if (valueStrings.length > 0) {
+        const query = `
+          MERGE INTO OrdenCompra AS Target
+          USING (VALUES ${valueStrings.join(',')}) AS Source (numero_orden_compra, numero_pedido, id_tipo_compra, fecha_orden, fecha_notificacion, fecha_vencimiento)
+          ON (Target.numero_orden_compra = Source.numero_orden_compra)
+          WHEN MATCHED THEN
+            UPDATE SET Target.numero_pedido = Source.numero_pedido, Target.id_tipo_compra = Source.id_tipo_compra, Target.fecha_orden = Source.fecha_orden, Target.fecha_notificacion = Source.fecha_notificacion, Target.fecha_vencimiento = Source.fecha_vencimiento
+          WHEN NOT MATCHED THEN
+            INSERT (numero_orden_compra, numero_pedido, id_tipo_compra, fecha_orden, fecha_notificacion, fecha_vencimiento) VALUES (Source.numero_orden_compra, Source.numero_pedido, Source.id_tipo_compra, Source.fecha_orden, Source.fecha_notificacion, Source.fecha_vencimiento);
+        `;
+        await request.query(query);
+        count += valueStrings.length;
+      }
     }
-    return res.json({ message: `Carga de órdenes de compra completada: ${count} registros.` });
+
+    return res.json({ message: `Carga de órdenes de compra completada: ${count} registros procesados exitosamente en SQL Server.` });
 
   } catch (err) {
+    console.error('Error en bulkOrdenesCompra SQL:', err);
     items.forEach(item => {
       const numOC = String(item.numero_orden_compra).trim();
       const numPed = parseInt(item.numero_pedido, 10);
@@ -292,7 +310,7 @@ async function bulkOrdenesCompra(req, res) {
       if (idx >= 0) localOrdenesCompra[idx] = newObj;
       else localOrdenesCompra.push(newObj);
     });
-    return res.json({ message: `Carga masiva de órdenes completada (${items.length} procesadas).` });
+    return res.json({ message: `Carga masiva de órdenes completada (${items.length} procesadas en modo demostración).` });
   }
 }
 

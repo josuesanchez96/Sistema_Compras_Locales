@@ -57,31 +57,50 @@ async function bulkPedidos(req, res) {
   let count = 0;
   try {
     const pool = await getPool();
-    for (const item of items) {
-      if (!item.numero_pedido || !item.codigo || !item.cantidad) continue;
-      
-      const sqlDate = parseToSQLDate(item.fecha_pedido);
+    const chunkSize = 500;
 
-      await pool.request()
-        .input('numero_pedido', sql.Int, parseInt(item.numero_pedido, 10))
-        .input('fecha_pedido', sql.VarChar(10), sqlDate)
-        .input('codigo', sql.VarChar(50), String(item.codigo))
-        .input('cantidad', sql.Int, parseInt(item.cantidad, 10))
-        .input('justificacion', sql.VarChar(500), String(item.justificacion || 'Carga Masiva Excel'))
-        .query(`
-          IF NOT EXISTS (SELECT 1 FROM Pedidos WHERE numero_pedido = @numero_pedido)
-            INSERT INTO Pedidos (numero_pedido, fecha_pedido, codigo, cantidad, justificacion)
-            VALUES (@numero_pedido, @fecha_pedido, @codigo, @cantidad, @justificacion);
-          ELSE
-            UPDATE Pedidos 
-            SET fecha_pedido = @fecha_pedido, codigo = @codigo, cantidad = @cantidad, justificacion = @justificacion
-            WHERE numero_pedido = @numero_pedido;
-        `);
-      count++;
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const request = pool.request();
+      const valueStrings = [];
+
+      chunk.forEach((item, index) => {
+        if (!item.numero_pedido || !item.codigo || !item.cantidad) return;
+
+        const paramNum = `num_${index}`;
+        const paramFec = `fec_${index}`;
+        const paramCod = `cod_${index}`;
+        const paramCan = `can_${index}`;
+        const paramJus = `jus_${index}`;
+
+        request.input(paramNum, sql.Int, parseInt(item.numero_pedido, 10));
+        request.input(paramFec, sql.VarChar(10), parseToSQLDate(item.fecha_pedido));
+        request.input(paramCod, sql.VarChar(50), String(item.codigo).trim());
+        request.input(paramCan, sql.Int, parseInt(item.cantidad, 10));
+        request.input(paramJus, sql.VarChar(500), String(item.justificacion || 'Carga Masiva Excel').trim());
+
+        valueStrings.push(`(@${paramNum}, @${paramFec}, @${paramCod}, @${paramCan}, @${paramJus})`);
+      });
+
+      if (valueStrings.length > 0) {
+        const query = `
+          MERGE INTO Pedidos AS Target
+          USING (VALUES ${valueStrings.join(',')}) AS Source (numero_pedido, fecha_pedido, codigo, cantidad, justificacion)
+          ON (Target.numero_pedido = Source.numero_pedido)
+          WHEN MATCHED THEN
+            UPDATE SET Target.fecha_pedido = Source.fecha_pedido, Target.codigo = Source.codigo, Target.cantidad = Source.cantidad, Target.justificacion = Source.justificacion
+          WHEN NOT MATCHED THEN
+            INSERT (numero_pedido, fecha_pedido, codigo, cantidad, justificacion) VALUES (Source.numero_pedido, Source.fecha_pedido, Source.codigo, Source.cantidad, Source.justificacion);
+        `;
+        await request.query(query);
+        count += valueStrings.length;
+      }
     }
-    return res.json({ message: `Carga de pedidos completada: ${count} registros cargados exitosamente.` });
+
+    return res.json({ message: `Carga de pedidos completada: ${count} registros cargados exitosamente en SQL Server.` });
 
   } catch (err) {
+    console.error('Error en bulkPedidos SQL:', err);
     items.forEach(item => {
       const num = parseInt(item.numero_pedido, 10);
       const prod = localProductos.find(p => p.codigo === String(item.codigo));
@@ -100,7 +119,7 @@ async function bulkPedidos(req, res) {
       if (idx >= 0) localPedidos[idx] = newObj;
       else localPedidos.push(newObj);
     });
-    return res.json({ message: `Carga masiva completada (${items.length} pedidos procesados).` });
+    return res.json({ message: `Carga masiva completada (${items.length} pedidos procesados en modo demostración).` });
   }
 }
 

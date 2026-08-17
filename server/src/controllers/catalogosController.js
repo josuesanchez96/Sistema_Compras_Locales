@@ -388,27 +388,49 @@ async function bulkProveedores(req, res) {
   let count = 0;
   try {
     const pool = await getPool();
-    for (const item of items) {
-      if (!item.nit || !item.nombre_proveedor) continue;
-      await pool.request()
-        .input('nit', sql.VarChar(25), String(item.nit))
-        .input('nombre_proveedor', sql.VarChar(200), String(item.nombre_proveedor))
-        .query(`
-          IF NOT EXISTS (SELECT 1 FROM Proveedores WHERE nit = @nit)
-            INSERT INTO Proveedores (nit, nombre_proveedor) VALUES (@nit, @nombre_proveedor);
-          ELSE
-            UPDATE Proveedores SET nombre_proveedor = @nombre_proveedor WHERE nit = @nit;
-        `);
-      count++;
+    const chunkSize = 500;
+
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const request = pool.request();
+      const valueStrings = [];
+
+      chunk.forEach((item, index) => {
+        if (!item.nit || !item.nombre_proveedor) return;
+        const paramNit = `nit_${index}`;
+        const paramNombre = `nom_${index}`;
+
+        request.input(paramNit, sql.VarChar(25), String(item.nit).trim());
+        request.input(paramNombre, sql.VarChar(200), String(item.nombre_proveedor).trim());
+
+        valueStrings.push(`(@${paramNit}, @${paramNombre})`);
+      });
+
+      if (valueStrings.length > 0) {
+        const query = `
+          MERGE INTO Proveedores AS Target
+          USING (VALUES ${valueStrings.join(',')}) AS Source (nit, nombre_proveedor)
+          ON (Target.nit = Source.nit)
+          WHEN MATCHED THEN
+            UPDATE SET Target.nombre_proveedor = Source.nombre_proveedor
+          WHEN NOT MATCHED THEN
+            INSERT (nit, nombre_proveedor) VALUES (Source.nit, Source.nombre_proveedor);
+        `;
+        await request.query(query);
+        count += valueStrings.length;
+      }
     }
-    return res.json({ message: `Carga masiva de proveedores: ${count} registros procesados.` });
+
+    return res.json({ message: `Carga masiva de proveedores: ${count} registros procesados exitosamente en SQL Server.` });
+
   } catch (err) {
+    console.error('Error en bulkProveedores SQL:', err);
     items.forEach(item => {
       const idx = localProveedores.findIndex(p => p.nit === String(item.nit));
       if (idx >= 0) localProveedores[idx] = { nit: String(item.nit), nombre_proveedor: item.nombre_proveedor };
       else localProveedores.push({ nit: String(item.nit), nombre_proveedor: item.nombre_proveedor });
     });
-    return res.json({ message: `Carga masiva completada (${items.length} proveedores procesados).` });
+    return res.json({ message: `Carga masiva completada (${items.length} proveedores procesados en modo demostración).` });
   }
 }
 async function updateProveedor(req, res) {
