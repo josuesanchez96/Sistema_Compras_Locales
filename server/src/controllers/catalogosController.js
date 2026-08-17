@@ -78,22 +78,45 @@ async function bulkProductos(req, res) {
   let count = 0;
   try {
     const pool = await getPool();
-    for (const item of items) {
-      if (!item.codigo || !item.descripcion) continue;
-      await pool.request()
-        .input('codigo', sql.VarChar(50), String(item.codigo))
-        .input('descripcion', sql.VarChar(250), String(item.descripcion))
-        .input('renglon', sql.VarChar(20), String(item.renglon || ''))
-        .query(`
-          IF NOT EXISTS (SELECT 1 FROM Productos WHERE codigo = @codigo)
-            INSERT INTO Productos (codigo, descripcion, renglon) VALUES (@codigo, @descripcion, @renglon);
-          ELSE
-            UPDATE Productos SET descripcion = @descripcion, renglon = @renglon WHERE codigo = @codigo;
-        `);
-      count++;
+    const chunkSize = 500;
+
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const request = pool.request();
+      const valueStrings = [];
+
+      chunk.forEach((item, index) => {
+        if (!item.codigo || !item.descripcion) return;
+        const paramCod = `cod_${index}`;
+        const paramDesc = `desc_${index}`;
+        const paramReng = `reng_${index}`;
+
+        request.input(paramCod, sql.VarChar(50), String(item.codigo).trim());
+        request.input(paramDesc, sql.VarChar(250), String(item.descripcion).trim().substring(0, 250));
+        request.input(paramReng, sql.VarChar(20), String(item.renglon || '').trim());
+
+        valueStrings.push(`(@${paramCod}, @${paramDesc}, @${paramReng})`);
+      });
+
+      if (valueStrings.length > 0) {
+        const query = `
+          MERGE INTO Productos AS Target
+          USING (VALUES ${valueStrings.join(',')}) AS Source (codigo, descripcion, renglon)
+          ON (Target.codigo = Source.codigo)
+          WHEN MATCHED THEN
+            UPDATE SET Target.descripcion = Source.descripcion, Target.renglon = Source.renglon
+          WHEN NOT MATCHED THEN
+            INSERT (codigo, descripcion, renglon) VALUES (Source.codigo, Source.descripcion, Source.renglon);
+        `;
+        await request.query(query);
+        count += valueStrings.length;
+      }
     }
-    return res.json({ message: `Carga masiva completada: ${count} productos procesados.` });
+
+    return res.json({ message: `Carga masiva completada: ${count} productos procesados exitosamente en SQL Server.` });
+
   } catch (err) {
+    console.error('Error en bulkProductos SQL:', err);
     items.forEach(item => {
       const idx = localProductos.findIndex(p => p.codigo === String(item.codigo));
       if (idx >= 0) {
