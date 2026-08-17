@@ -758,7 +758,7 @@ async function getRecepcionesCompra(req, res) {
         p.cantidad,
         pr.descripcion AS descripcion_producto
       FROM RecepcionCompra rc
-      LEFT JOIN OrdenCompra oc ON rc.numero_orden_compra = oc.numero_orden_compra
+      LEFT JOIN OrdenCompra oc ON LTRIM(RTRIM(rc.numero_orden_compra)) = LTRIM(RTRIM(oc.numero_orden_compra))
       LEFT JOIN Pedidos p ON oc.numero_pedido = p.numero_pedido
       LEFT JOIN Productos pr ON p.codigo = pr.codigo
       LEFT JOIN Proveedores prov ON rc.nit = prov.nit
@@ -768,6 +768,7 @@ async function getRecepcionesCompra(req, res) {
     const formatted = result.recordset.map(row => ({
       ...row,
       numero_orden_compra: String(row.numero_orden_compra).trim(),
+      codigo: row.codigo ? String(row.codigo).trim() : null,
       fecha_ingreso_display: formatDisplayDate(row.fecha_ingreso),
       fecha_pedido_display: formatDisplayDate(row.fecha_pedido),
       precio_total: row.precio_unitario && row.cantidad ? (row.precio_unitario * row.cantidad) : 0
@@ -777,13 +778,16 @@ async function getRecepcionesCompra(req, res) {
 
   } catch (err) {
     const formattedLocal = localRecepcionCompra.map(rc => {
-      const oc = localOrdenesCompra.find(o => o.numero_orden_compra === rc.numero_orden_compra);
+      const oc = localOrdenesCompra.find(o => String(o.numero_orden_compra).trim() === String(rc.numero_orden_compra).trim());
       const ped = oc ? localPedidos.find(p => p.numero_pedido === oc.numero_pedido) : null;
       const cant = ped ? ped.cantidad : 10000;
       return {
         ...rc,
         fecha_ingreso_display: formatDisplayDate(rc.fecha_ingreso),
         numero_pedido: oc ? oc.numero_pedido : 1000,
+        fecha_pedido: ped ? ped.fecha_pedido : null,
+        fecha_pedido_display: formatDisplayDate(ped ? ped.fecha_pedido : null),
+        codigo: ped ? ped.codigo : null,
         cantidad: cant,
         descripcion_producto: ped ? ped.descripcion_producto : 'Producto',
         precio_total: rc.precio_unitario * cant
