@@ -75,25 +75,43 @@ async function bulkProductos(req, res) {
     return res.status(400).json({ error: 'Se requiere una lista válida de productos.' });
   }
 
+  const uniqueItemsMap = new Map();
+  items.forEach(item => {
+    if (item && item.codigo && item.descripcion) {
+      const cleanCode = String(item.codigo).trim().substring(0, 50);
+      if (cleanCode) {
+        uniqueItemsMap.set(cleanCode, {
+          codigo: cleanCode,
+          descripcion: String(item.descripcion).trim().substring(0, 250),
+          renglon: String(item.renglon || '').trim().substring(0, 20)
+        });
+      }
+    }
+  });
+  const cleanItems = Array.from(uniqueItemsMap.values());
+
+  if (cleanItems.length === 0) {
+    return res.status(400).json({ error: 'No se encontraron registros válidos de productos en la lista.' });
+  }
+
   let count = 0;
   try {
     const pool = await getPool();
     const chunkSize = 500;
 
-    for (let i = 0; i < items.length; i += chunkSize) {
-      const chunk = items.slice(i, i + chunkSize);
+    for (let i = 0; i < cleanItems.length; i += chunkSize) {
+      const chunk = cleanItems.slice(i, i + chunkSize);
       const request = pool.request();
       const valueStrings = [];
 
       chunk.forEach((item, index) => {
-        if (!item.codigo || !item.descripcion) return;
         const paramCod = `cod_${index}`;
         const paramDesc = `desc_${index}`;
         const paramReng = `reng_${index}`;
 
-        request.input(paramCod, sql.VarChar(50), String(item.codigo).trim());
-        request.input(paramDesc, sql.VarChar(250), String(item.descripcion).trim().substring(0, 250));
-        request.input(paramReng, sql.VarChar(20), String(item.renglon || '').trim());
+        request.input(paramCod, sql.VarChar(50), item.codigo);
+        request.input(paramDesc, sql.VarChar(250), item.descripcion);
+        request.input(paramReng, sql.VarChar(20), item.renglon);
 
         valueStrings.push(`(@${paramCod}, @${paramDesc}, @${paramReng})`);
       });
@@ -117,15 +135,15 @@ async function bulkProductos(req, res) {
 
   } catch (err) {
     console.error('Error en bulkProductos SQL:', err);
-    items.forEach(item => {
-      const idx = localProductos.findIndex(p => p.codigo === String(item.codigo));
+    cleanItems.forEach(item => {
+      const idx = localProductos.findIndex(p => p.codigo === item.codigo);
       if (idx >= 0) {
-        localProductos[idx] = { codigo: String(item.codigo), descripcion: item.descripcion, renglon: String(item.renglon || '') };
+        localProductos[idx] = item;
       } else {
-        localProductos.push({ codigo: String(item.codigo), descripcion: item.descripcion, renglon: String(item.renglon || '') });
+        localProductos.push(item);
       }
     });
-    return res.json({ message: `Carga masiva completada (${items.length} productos procesados en modo demostración).` });
+    return res.json({ message: `Carga masiva completada (${cleanItems.length} productos procesados en modo demostración. Error SQL: ${err.message || 'Sin conexión'}).` });
   }
 }
 
