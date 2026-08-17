@@ -10,10 +10,18 @@ let sqlDriver = sql;
 
 if (isTrusted) {
   // Conexión nativa de Windows (Windows Authentication) mediante ODBC
-  sqlDriver = require('mssql/msnodesqlv8');
-  config = {
-    connectionString: `Driver={SQL Server};Server=${serverName};Database=${databaseName};Trusted_Connection=yes;`
-  };
+  try {
+    sqlDriver = require('mssql/msnodesqlv8');
+    config = {
+      connectionString: `Driver={SQL Server};Server=${serverName};Database=${databaseName};Trusted_Connection=yes;`
+    };
+  } catch (e) {
+    config = {
+      server: serverName,
+      database: databaseName,
+      options: { trustServerCertificate: true }
+    };
+  }
 } else {
   // Autenticación de SQL Server (Azure SQL / Nube / Usuario y contraseña)
   config = {
