@@ -73,7 +73,7 @@ INSERT INTO OrdenCompra (numero_orden_compra, numero_pedido, id_tipo_compra, fec
 ('123123', 1000, 'BC', '2026-07-20', '2026-07-21', '2026-07-31');
 
 -- 11. Insertar Entrega de Orden de Compra
-INSERT INTO EntregaOrdenCompra (fecha_entrega, numero_orden_compra, usuario, fecha_recepcion) VALUES 
+INSERT INTO EntregaOrdenCompra (fecha_entrega, numero_orden_compra, usuario_entrega, fecha_recepcion) VALUES 
 ('2026-07-22', '123123', 'a201600577908', '2026-07-23');
 
 -- 12. Insertar Entrega de Expediente
