@@ -1483,7 +1483,7 @@
               <div class="flex justify-between items-center flex-wrap gap-3">
                 <p class="text-xs text-slate-500">Registro final de datos de factura, proveedor e ingreso de la compra</p>
                 <template x-if="hasRole('Encargado de pedidos') || hasRole('Encargado de ingresos') || hasRole('Encargado de recepción')">
-                  <button @click="showRecepcionCompraModal = true" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition">
+                  <button @click="openRecepcionCompraModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md transition">
                     <i class="fa-solid fa-plus mr-2"></i> Registrar Recepción de Compra
                   </button>
                 </template>
@@ -2188,7 +2188,7 @@
             <!-- Dropdown de resultados -->
             <div x-show="rcDropOpen" @click.outside="rcDropOpen = false"
               class="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
-              <template x-for="o in ordenesList.filter(o => {
+              <template x-for="o in ordenesDisponiblesParaRecepcion.filter(o => {
                 const trimmed = rcSearch.trim();
                 if (!trimmed) return false;
                 const pedStr = String(o.numero_pedido);
@@ -2203,8 +2203,8 @@
                   <span class="text-slate-400 truncate" x-text="o.descripcion_producto"></span>
                 </button>
               </template>
-              <template x-if="ordenesList.filter(o => { const t = rcSearch.trim(); if(!t) return false; const p=String(o.numero_pedido); return t.endsWith(' ') ? p===t.trim() : p.startsWith(t); }).length === 0">
-                <div class="px-4 py-3 text-xs text-slate-400 italic">No se encontraron coincidencias</div>
+              <template x-if="ordenesDisponiblesParaRecepcion.filter(o => { const t = rcSearch.trim(); if(!t) return false; const p=String(o.numero_pedido); return t.endsWith(' ') ? p===t.trim() : p.startsWith(t); }).length === 0">
+                <div class="px-4 py-3 text-xs text-slate-400 italic">No se encontraron pedidos pendientes de recepción</div>
               </template>
             </div>
           </div>

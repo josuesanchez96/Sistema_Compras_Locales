@@ -1558,6 +1558,35 @@ document.addEventListener('alpine:init', () => {
     },
 
 
+    get ordenesDisponiblesParaRecepcion() {
+      const ocRecibidas = new Set(
+        (this.recepcionesCompraList || [])
+          .map(r => (r.numero_orden_compra ? String(r.numero_orden_compra).trim() : null))
+          .filter(Boolean)
+      );
+      const pedidosRecibidos = new Set(
+        (this.recepcionesCompraList || [])
+          .map(r => (r.numero_pedido != null ? String(r.numero_pedido).trim() : null))
+          .filter(Boolean)
+      );
+      return (this.ordenesList || []).filter(o => {
+        const numOC = o.numero_orden_compra ? String(o.numero_orden_compra).trim() : '';
+        const numPed = o.numero_pedido != null ? String(o.numero_pedido).trim() : '';
+        return !ocRecibidas.has(numOC) && !pedidosRecibidos.has(numPed);
+      });
+    },
+    openRecepcionCompraModal() {
+      this.loadRecepcionesCompra();
+      this.newRecepcionCompra = {
+        numero_orden_compra: '',
+        fecha_ingreso: new Date().toISOString().split('T')[0],
+        serie_factura: '',
+        numero_factura: '',
+        nit: '',
+        precio_unitario: ''
+      };
+      this.showRecepcionCompraModal = true;
+    },
     async loadRecepcionesCompra() {
       try {
         await this.loadOrdenes();

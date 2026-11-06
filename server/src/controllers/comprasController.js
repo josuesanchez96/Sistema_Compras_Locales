@@ -833,12 +833,20 @@ async function registrarRecepcionCompra(req, res) {
     return res.status(400).json({ error: 'Número de orden, fecha de ingreso, NIT y precio unitario son requeridos.' });
   }
 
+  const numOC = String(numero_orden_compra).trim();
   const sqlFechaIngreso = parseToSQLDate(fecha_ingreso);
 
   try {
     const pool = await getPool();
+    const existingRC = await pool.request()
+      .input('numero_orden_compra', sql.Char(10), numOC)
+      .query(`SELECT id_recepcion_compra FROM RecepcionCompra WHERE RTRIM(LTRIM(numero_orden_compra)) = @numero_orden_compra`);
+    if (existingRC.recordset.length > 0) {
+      return res.status(400).json({ error: `La Orden de Compra No. ${numOC} ya cuenta con una recepción de compra registrada.` });
+    }
+
     await pool.request()
-      .input('numero_orden_compra', sql.Char(10), String(numero_orden_compra).trim())
+      .input('numero_orden_compra', sql.Char(10), numOC)
       .input('fecha_ingreso', sql.VarChar(10), sqlFechaIngreso)
       .input('serie_factura', sql.VarChar(30), String(serie_factura || ''))
       .input('numero_factura', sql.VarChar(30), String(numero_factura || ''))
@@ -852,6 +860,10 @@ async function registrarRecepcionCompra(req, res) {
     return res.status(201).json({ message: 'Recepción de compra registrada exitosamente.' });
 
   } catch (err) {
+    const existingLocal = localRecepcionCompra.find(r => String(r.numero_orden_compra).trim() === numOC);
+    if (existingLocal) {
+      return res.status(400).json({ error: `La Orden de Compra No. ${numOC} ya cuenta con una recepción de compra registrada.` });
+    }
     const prov = localProveedores.find(p => p.nit === String(nit));
     localRecepcionCompra.push({
       id_recepcion_compra: localRecepcionCompra.length + 1,
