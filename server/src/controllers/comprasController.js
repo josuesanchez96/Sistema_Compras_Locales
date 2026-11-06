@@ -120,6 +120,13 @@ async function createOrdenCompra(req, res) {
 
   try {
     const pool = await getPool();
+    const existingOC = await pool.request()
+      .input('numero_pedido', sql.Int, numPed)
+      .query(`SELECT numero_orden_compra FROM OrdenCompra WHERE numero_pedido = @numero_pedido`);
+    if (existingOC.recordset.length > 0) {
+      return res.status(400).json({ error: `El Pedido No. ${numPed} ya tiene asignada la Orden de Compra No. ${existingOC.recordset[0].numero_orden_compra.trim()}.` });
+    }
+
     await pool.request()
       .input('numero_orden_compra', sql.Char(10), numOC)
       .input('numero_pedido', sql.Int, numPed)
@@ -138,6 +145,10 @@ async function createOrdenCompra(req, res) {
     }
     if (err.message && err.message.includes('FOREIGN KEY')) {
       return res.status(400).json({ error: 'El número de pedido o tipo de compra ingresado no existe.' });
+    }
+    const existingLocal = localOrdenesCompra.find(x => parseInt(x.numero_pedido, 10) === numPed);
+    if (existingLocal) {
+      return res.status(400).json({ error: `El Pedido No. ${numPed} ya tiene asignada la Orden de Compra No. ${existingLocal.numero_orden_compra}.` });
     }
     const ped = localPedidos.find(p => p.numero_pedido === numPed);
     localOrdenesCompra.push({

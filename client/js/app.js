@@ -1231,23 +1231,32 @@ document.addEventListener('alpine:init', () => {
       if (!this.editOrden.numero_pedido) return null;
       return this.pedidosList.find(p => String(p.numero_pedido) === String(this.editOrden.numero_pedido)) || null;
     },
+    get availablePedidosForNewOrden() {
+      const pedidosConOrden = new Set(
+        (this.ordenesList || [])
+          .map(o => (o.numero_pedido != null ? String(o.numero_pedido).trim() : null))
+          .filter(Boolean)
+      );
+      return (this.pedidosList || []).filter(p => !pedidosConOrden.has(String(p.numero_pedido).trim()));
+    },
     get filteredPedidosForModal() {
+      const baseList = this.availablePedidosForNewOrden;
       if (!this.pedidoSearchModal && this.pedidoSearchModal !== 0) {
-        return this.pedidosList;
+        return baseList;
       }
       const raw = String(this.pedidoSearchModal);
       const isExact = raw.endsWith(' ');
       const term = raw.trim().toLowerCase();
 
       if (!term) {
-        return this.pedidosList;
+        return baseList;
       }
 
       if (isExact) {
-        return this.pedidosList.filter(p => String(p.numero_pedido).toLowerCase() === term);
+        return baseList.filter(p => String(p.numero_pedido).toLowerCase() === term);
       }
 
-      return this.pedidosList.filter(p => 
+      return baseList.filter(p => 
         String(p.numero_pedido).toLowerCase().startsWith(term) ||
         (p.codigo && String(p.codigo).toLowerCase().includes(term)) ||
         (p.descripcion_producto && p.descripcion_producto.toLowerCase().includes(term))
@@ -1264,6 +1273,7 @@ document.addEventListener('alpine:init', () => {
     openCreateOrdenModal() {
       this.loadPedidos();
       this.loadTiposCompra();
+      this.loadOrdenes();
       this.pedidoSearchModal = '';
       this.pedidoDropdownOpen = false;
       this.newOrden = {

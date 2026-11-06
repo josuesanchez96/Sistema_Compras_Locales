@@ -2060,7 +2060,7 @@
               </div>
             </template>
             <template x-if="filteredPedidosForModal.length === 0">
-              <div class="p-3 text-xs text-slate-400 italic text-center">No se encontró ningún pedido coincidente.</div>
+              <div class="p-3 text-xs text-slate-400 italic text-center" x-text="pedidoSearchModal ? 'No se encontró ningún pedido disponible coincidente.' : 'Todos los pedidos registrados ya cuentan con una Orden de Compra.'"></div>
             </template>
           </div>
         </div>
