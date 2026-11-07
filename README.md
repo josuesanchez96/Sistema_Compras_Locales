@@ -1,14 +1,18 @@
 # Sistema de Gestión de Compras y Adquisiciones Locales
 
-Aplicación Web Completa para la Gestión de Compras y Adquisiciones Locales desarrollada con un backend en **Node.js (Express REST API)**, base de datos en **SQL Server (T-SQL)** y un frontend reactivo con **HTML5, Tailwind CSS y Alpine.js**.
+Aplicación Web Empresarial para el Control, Seguimiento y Auditoría del ciclo completo de **Compras y Adquisiciones Locales**. Desarrollada con arquitectura desacoplada: backend en **Node.js (Express REST API)**, base de datos en **Microsoft Azure SQL Database (T-SQL)** y un frontend reactivo tipo SPA con **HTML5, Tailwind CSS y Alpine.js**.
+
+- 🌐 **Despliegue en Producción (Render):** [https://sistema-compras-locales.onrender.com](https://sistema-compras-locales.onrender.com)
+- 🗄️ **Base de Datos en la Nube:** Microsoft Azure SQL Server (`sqlserver-estudiante-miumg.database.windows.net`)
 
 ---
 
 ## 🛠️ Stack Tecnológico
 
-- **Backend**: Node.js, Express framework, JWT (JSON Web Tokens), `mssql` (Driver oficial de Microsoft para SQL Server).
-- **Base de Datos**: SQL Server (T-SQL) con encriptación de contraseñas de alta seguridad mediante **Argon2id** (`VARCHAR(255)`) con compatibilidad para hashes legados SHA2_512.
-- **Frontend**: HTML5, Vanilla CSS, Tailwind CSS (Design System & Dark Mode), Alpine.js (Reactividad y Modales), SheetJS (`xlsx`) para lectura y carga masiva de Excel en el navegador.
+- **Backend**: Node.js, Express framework, JWT (JSON Web Tokens con expiración a 12h), `mssql` (Driver oficial de Microsoft para SQL Server).
+- **Seguridad Criptográfica**: **Argon2id** (mediante `@node-rs/argon2`, estándar de referencia OWASP) con soporte de **migración transparente progresiva** desde hashes legados SHA2-512.
+- **Base de Datos**: Microsoft Azure SQL Server / SQL Server local (T-SQL) con 13 tablas relacionales normalizadas, constraints e integridad referencial.
+- **Frontend**: HTML5, Vanilla CSS, Tailwind CSS (Design System corporativo y Dark/Light Mode), Alpine.js (Estado reactivo global y modales), SheetJS (`xlsx`) para lectura y carga masiva de Excel en el navegador.
 
 ---
 
@@ -17,147 +21,138 @@ Aplicación Web Completa para la Gestión de Compras y Adquisiciones Locales des
 ```
 Sistema_Compras_Locales/
 ├── database/
-│   ├── schema.sql                 # Scripts T-SQL para creación de tablas y llaves foráneas
-│   └── seed.sql                   # Datos de prueba iniciales (Usuario admin JSL, Roles, Catálogos)
+│   ├── schema.sql                 # Scripts T-SQL (13 tablas, claves foráneas, índices, VARCHAR(255) para contraseñas)
+│   └── seed.sql                   # Datos iniciales (Usuario admin JSL con Argon2id, Roles, Catálogos base)
 ├── server/
-│   ├── package.json               # Dependencias del servidor Node.js
-│   ├── .env                       # Variables de entorno y conexión a SQL Server
+│   ├── package.json               # Dependencias (Express, @node-rs/argon2, mssql, jsonwebtoken, etc.)
+│   ├── .env                       # Variables de entorno y conexión segura a Azure SQL
 │   └── src/
-│       ├── app.js                 # Servidor Express principal y entrega de archivos estáticos
+│       ├── app.js                 # Servidor Express principal y entrega estática de la SPA
 │       ├── config/
-│       │   └── db.js              # Conexión a la base de datos SQL Server
+│       │   └── db.js              # Pool de conexiones optimizado para Azure SQL / SQL Server
 │       ├── middleware/
-│       │   ├── authMiddleware.js   # Verificación de Token JWT
+│       │   ├── authMiddleware.js   # Verificación y decodificación de tokens JWT
 │       │   └── roleMiddleware.js   # Control de acceso basado en roles (RBAC)
 │       ├── utils/
-│       │   └── dateUtils.js       # Manejo y conversión de fechas dd/mm/yyyy <-> YYYY-MM-DD
+│       │   └── dateUtils.js       # Conversión y formateo estricto de fechas dd/mm/yyyy <-> YYYY-MM-DD
+│       │   └── passwordUtils.js   # Hashing y verificación con Argon2id y soporte legacy SHA-512
 │       ├── controllers/           # Lógica de negocio (Auth, Usuarios, Catálogos, Pedidos, Compras, Dashboard)
-│       └── routes/                # Rutas REST API protegidas
+│       └── routes/                # Enrutamiento de endpoints REST API protegidos
 ├── client/
 │   ├── css/
-│   │   └── custom.css             # Estilos personalizados, tarjetas glassmorphic y animaciones
+│   │   └── custom.css             # Estilos personalizados, efectos glassmorphism y animaciones
 │   ├── js/
-│   │   ├── app.js                 # Estado global en Alpine.js y cliente de API REST
-│   │   └── excelParser.js         # Utilidad frontend para lectura de Excel mediante SheetJS
+│   │   ├── app.js                 # Estado global de la aplicación (Alpine.js) y cliente HTTP REST
+│   │   └── excelParser.js         # Utilidad frontend para importación y validación masiva con SheetJS
 │   └── index.html                 # Interfaz de Usuario SPA (Menú lateral, Dashboard, Vistas y Modales)
-└── README.md                      # Guía de instalación y uso del sistema
+└── README.md                      # Documentación integral del sistema
 ```
 
 ---
 
-## 📋 Requisitos Previos
+## 🔄 Flujo Operativo del Sistema
 
-Antes de comenzar, asegúrate de contar con los siguientes programas instalados en tu equipo:
+El sistema implementa una trazabilidad lineal y auditable en 4 etapas:
 
-1. **Node.js**: Versión 16.x o superior ([Descargar Node.js](https://nodejs.org/)).
-2. **SQL Server**: Edición Express, Developer o Enterprise (2016 o posterior).
-3. **SQL Server Management Studio (SSMS)** o Azure Data Studio.
-
----
-
-## 🚀 Pasos para Ejecutar el Sistema
-
-### Paso 1: Configurar la Base de Datos en SQL Server
-
-1. Abre **SQL Server Management Studio (SSMS)** y conéctate a tu servidor local.
-2. Crea una nueva base de datos llamada `Sistema_Compras_Locales`:
-   ```sql
-   CREATE DATABASE Sistema_Compras_Locales;
-   GO
-   USE Sistema_Compras_Locales;
-   GO
-   ```
-3. Ejecuta el contenido del archivo [`database/schema.sql`](database/schema.sql) para crear las 13 tablas relacionales con sus restricciones de integridad.
-4. Ejecuta el contenido del archivo [`database/seed.sql`](database/seed.sql) para poblar las tablas con los datos iniciales (Roles, Usuario Administrador `JSL`, Productos, Proveedores, Pedidos de prueba).
-
----
-
-### Paso 2: Configurar el Backend (Node.js REST API)
-
-1. Abre una terminal de comandos (PowerShell o CMD) y navega a la carpeta `server`:
-   ```bash
-   cd "c:\PROYECTOS Y EJERCICIOS\Sistema_Compras_Locales\server"
-   ```
-
-2. Revisa o edita las credenciales de conexión a SQL Server en el archivo `.env`:
-   ```env
-   PORT=3000
-   JWT_SECRET=super_secret_jwt_key_compras_locales_2026
-
-   DB_USER=sa
-   DB_PASSWORD=TuPasswordSeguro123!
-   DB_SERVER=localhost
-   DB_NAME=Sistema_Compras_Locales
-   DB_PORT=1433
-   DB_ENCRYPT=false
-   ```
-
-3. Instala las dependencias necesarias:
-   ```bash
-   npm install
-   ```
-
-4. Inicia el servidor de desarrollo:
-   ```bash
-   npm start
-   ```
-
-Si la conexión es exitosa, verás el siguiente mensaje en la consola:
 ```
-🚀 Servidor ejecutándose en http://localhost:3000
-✅ Conexión establecida exitosamente con SQL Server
+[1. Catálogos] ➔ [2. Pedidos] ➔ [3. Órdenes de Compra] ➔ [4. Recepción & Factura]
 ```
 
-*(Nota: Si SQL Server no estuviera activo temporalmente, el backend cuenta con un modo de respaldo/demostración que permite probar todas las características de la aplicación en el navegador).*
+1. **Gestión de Catálogos Maestros:** Alta y mantenimiento de Productos (asociados a su **renglón presupuestario**), Proveedores con **NIT**, Responsables institucionales y Tipos de Compra (Baja Cuantía, Compra Directa, etc.). Admite importación masiva en Excel.
+2. **Ciclo de Pedidos:** Registro formal del requerimiento con cantidad y justificación de gasto. Asignación delegada de un responsable para dar trámite a la gestión.
+3. **Ejecución de Compras y Expediente:**
+   - Emisión de la Orden de Compra vinculada al pedido.
+   - Control de plazos contractuales (Fecha de orden, fecha de notificación oficial al proveedor y fecha de vencimiento).
+   - Entrega física y recepción de la orden con control de usuarios y fechas.
+   - Traslado y entrega del expediente administrativo.
+4. **Recepción de Almacén y Liquidación Fiscal:** Registro del ingreso físico de mercadería a bodega, serie y número de factura electrónica, NIT del proveedor y precio unitario con cálculo automático de montos totales y actualización a estado **Ingresado**.
 
 ---
 
-### Paso 3: Acceder al Sistema en el Navegador Web
+## 🎯 Reglas de Negocio y Mejoras Recientes
 
-1. Abre tu navegador de preferencia y dirígete a:
-   [http://localhost:3000](http://localhost:3000)
+### 1. Seguridad Avanzada con Argon2id (OWASP)
+- **Cero SHA-512 directo:** Se reemplazó el uso de `HASHBYTES('SHA2_512', ...)` por el algoritmo **Argon2id** (`@node-rs/argon2`), brindando protección adaptativa de alto costo contra ataques de fuerza bruta por GPU/ASIC.
+- **Migración Transparente (Lazy Migration):** Los usuarios que tenían contraseñas con el algoritmo antiguo son validados correctamente en su primer inicio de sesión, y en ese mismo instante el sistema re-hashea y actualiza su contraseña a Argon2id en Azure SQL de forma 100% invisible.
+- **Auto-migración de esquema:** Comprobación y ajuste automático del campo `contrasena_hash` a `VARCHAR(255) NOT NULL`.
 
-2. Utiliza las siguientes credenciales para iniciar sesión:
-   - **Usuario**: `a201600577908`
-   - **Contraseña**: `a201600577908` (o `123456`)
-   - **Nombre de Usuario**: Josué David Sánchez López (`JSL`)
-   - **Roles Asignados**: Jefe de bodega, Encargado de pedidos, Encargado de ingresos, Encargado de recepción, Encargado de compras (Acceso completo a todos los módulos).
+### 2. Integridad en Órdenes de Compra
+- Al crear una nueva orden de compra, el selector y buscador **excluyen automáticamente los pedidos que ya tienen una orden asignada**, previniendo compras duplicadas o inconsistencias de stock.
+- Validación de rechazo en el backend si se intenta enviar un número de pedido previamente asignado.
 
----
-
-## 🎯 Características Principales
-
-### 1. Dashboard Consolidado (Pestaña Principal)
-- **Tarjetas KPI**: Muestran el Total de Pedidos, Pedidos Ingresados, Pedidos Pendientes y Monto Invertido en Quetzales.
-- **Sub-Ventana 2 (Resumen por Renglón)**: Tarjetas gráficas interactivas por renglón presupuestario con conteo y barra de progreso (% completado). Al hacer clic en un renglón se filtra automáticamente la Sub-Ventana 1.
-- **Sub-Ventana 1 (Listado Consolidado)**: Tabla con columnas completas, badges de estado (`Ingresado` en Emerald / `Pendiente` en Amber), pie de tabla con **Monto Gran Total**, filtros por Cuatrimestre, Estado, Buscador reactivo, paginación de 50 registros y botón de **Exportación a CSV**.
-
-### 2. Carga Masiva mediante Archivos Excel
-- **Productos**: Columnas `codigo`, `descripcion`, `renglon`.
-- **Proveedores**: Columnas `nit`, `nombre_proveedor`.
-- **Pedidos**: Columnas `numero_pedido`, `fecha_pedido`, `codigo`, `cantidad`, `justificacion`.
-- **Órdenes de Compra**: Columnas `numero_pedido`, `numero_orden_compra`, `id_tipo_compra`, `fecha_orden`, `fecha_notificacion`, `fecha_vencimiento`.
-
-### 3. Manejo Estricto de Fechas (`dd/mm/yyyy`)
-- El sistema convierte automáticamente las fechas ingresadas o cargadas desde Excel al formato `YYYY-MM-DD` de SQL Server y las formatea como `dd/mm/yyyy` en la interfaz para prevenir el error Msg 241.
-
-### 4. Menú Lateral e Interfaz Minimalista
-- Menú lateral en el lado izquierdo con opción de colapsar/expandir (`Toggle`) para ampliar las tablas en pantalla completa.
-- Botón de **Cerrar Sesión** ubicado fijamente en la esquina inferior izquierda.
+### 3. Control de Recepción de Compras y Facturación
+- En el modal de registro de recepción de compra, el buscador de pedidos **solo muestra órdenes pendientes de recibir**, ocultando automáticamente los pedidos que ya fueron ingresados a almacén.
+- Validación estricta en el backend contra registros duplicados de recepción.
 
 ---
 
-## 🔐 Matriz de Permisos por Rol
+## 📊 Tablero de Control (Dashboard Ejecutivo)
 
-| Módulo | Submódulo | Permisos CRUD | Solo Consulta |
+- **Métricas KPI en Tiempo Real:** Total de Pedidos, Pedidos Ingresados a Bodega, Pedidos Pendientes de Entrega y Monto Invertido acumulado en Quetzales.
+- **Sub-Ventana 1 (Consolidado General):** Matriz completa que relaciona pedido, fechas, orden de compra, código de insumo, descripción, renglón, cantidades, precios y badges de estado (`Ingresado` / `Pendiente`).
+- **Sub-Ventana 2 (Resumen por Renglón):** Agrupación y totalización financiera por renglón presupuestario con barras de avance porcentual. Al seleccionar un renglón, la vista consolidada se filtra instantáneamente.
+- **Filtros Avanzados:** Filtrado por Cuatrimestres fiscales (1er, 2do y 3er cuatrimestre), estado de compra, búsqueda predictiva y exportación de datos a **CSV**.
+
+---
+
+## 🔐 Matriz de Control de Acceso por Roles (RBAC)
+
+| Módulo | Funcionalidad | Roles con Permiso Total | Permiso Solo Consulta |
 | :--- | :--- | :--- | :--- |
-| **Administración** | Crear usuario | Jefe de bodega | Ninguno |
-| **Catálogos** | Productos, Responsables, Tipo Compra, Proveedores | Encargado de pedidos | Ninguno |
-| **Pedidos** | Listado de Pedidos | Encargado de pedidos | Jefe de bodega, Ingresos, Recepción, Compras |
+| **Administración** | Crear usuarios, resetear contraseñas, asignar roles | Jefe de bodega | Ninguno |
+| **Catálogos** | Productos, Proveedores, Responsables, Tipos de Compra | Encargado de pedidos | Ninguno |
+| **Pedidos** | Listado de pedidos y carga masiva | Encargado de pedidos | Jefe de bodega, Compras, Ingresos, Recepción |
 | **Pedidos** | Asignación de Responsable | Encargado de pedidos | Ninguno |
-| **Ejecución Compras** | Registrar orden compra | Encargado de pedidos, Compras | Jefe de bodega, Ingresos, Recepción |
-| **Ejecución Compras** | Entrega Orden Compra | Encargado de pedidos | Jefe de bodega, Ingresos, Recepción |
-| **Ejecución Compras** | Recepción Orden Compra | Encargado de ingresos | Jefe de bodega, Pedidos, Recepción |
-| **Ejecución Compras** | Entrega Expediente | Encargado de pedidos | Jefe de bodega, Ingresos, Recepción |
-| **Ejecución Compras** | Recepción de Compra | Pedidos, Ingresos, Recepción | Jefe de bodega, Compras |
-| **Dashboard** | Principal | TODOS | TODOS |
+| **Ejecución Compras** | Registro de Órdenes de Compra | Encargado de pedidos, Encargado de compras | Jefe de bodega, Ingresos, Recepción |
+| **Ejecución Compras** | Entrega de Orden al Proveedor | Encargado de pedidos | Jefe de bodega, Compras, Recepción |
+| **Ejecución Compras** | Recepción de Orden | Encargado de ingresos | Jefe de bodega, Pedidos, Recepción |
+| **Ejecución Compras** | Entrega de Expediente | Encargado de pedidos | Jefe de bodega, Compras, Recepción |
+| **Ejecución Compras** | Recepción de Almacén y Facturación | Encargado de pedidos, Ingresos, Recepción | Jefe de bodega, Compras |
+| **Dashboard** | Métricas KPIs, Consolidado y Resumen por Renglón | **Todos los roles** | **Todos los roles** |
+
+---
+
+## 🚀 Despliegue y Ejecución
+
+### Opción A: Despliegue en la Nube (Render + Azure SQL)
+1. Alojar el repositorio en GitHub.
+2. Crear un **Web Service** en Render conectado al repositorio:
+   - **Build Command:** `cd server && npm install`
+   - **Start Command:** `cd server && npm start`
+3. Configurar variables de entorno en Render (**Environment**):
+   ```env
+   PORT=10000
+   JWT_SECRET=tu_clave_secreta_jwt_larga_y_aleatoria
+   DB_USER=sqladmin
+   DB_PASSWORD=TuPasswordSeguroAzureSQL
+   DB_SERVER=sqlserver-estudiante-miumg.database.windows.net
+   DB_NAME=bd_compras_locales
+   DB_PORT=1433
+   DB_ENCRYPT=true
+   TZ=America/Guatemala
+   ```
+4. En el firewall de Azure SQL Server, habilitar la opción: *"Permitir que los recursos y servicios de Azure accedan a este servidor"*.
+
+---
+
+### Opción B: Ejecución en Entorno Local
+
+#### 1. Requisitos Previos
+- Node.js versión 18.x o superior.
+- SQL Server (Express, Developer o Azure SQL) con SSMS o Azure Data Studio.
+
+#### 2. Base de Datos
+- Ejecutar [`database/schema.sql`](database/schema.sql) para crear las tablas.
+- Ejecutar [`database/seed.sql`](database/seed.sql) para insertar roles y el usuario administrador `JSL`.
+
+#### 3. Backend y Servidor
+```bash
+cd server
+npm install
+npm start
+```
+
+#### 4. Acceso al Sistema
+- **URL Local:** `http://localhost:3000`
+- **Autenticación:** Ingrese con sus credenciales asignadas o configuradas durante el despliegue inicial.
+- **Seguridad:** Por políticas de seguridad y buenas prácticas de protección de credenciales, los nombres de usuario y contraseñas de cuentas administradoras no se publican en este documento. Para pruebas o acceso inicial, solicite las credenciales al administrador del sistema.
