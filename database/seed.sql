@@ -8,7 +8,7 @@ VALUES (
     'JSL', 
     'Josué David Sánchez López', 
     'a201600577908', 
-    HASHBYTES('SHA2_512', 'a201600577908')
+    '$argon2id$v=19$m=19456,t=2,p=1$589/lQZmrw9cpgKzBUKM3g$zSp0RL+02+xfj6v0zqOFv6J/Ic2zdnMu1N9PJz0jRwc'
 );
 
 -- 2. Insertar Roles del sistema

@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const { hashPassword } = require('../utils/passwordUtils');
 
 // In-memory fallback dataset
 let localUsuarios = [
@@ -58,17 +59,33 @@ async function createUsuario(req, res) {
   const idUpper = id_usuario.toUpperCase();
 
   try {
+    const hashedPassword = await hashPassword(password);
     const pool = await getPool();
     
-    // Insertar Usuario con hash SHA2_512
+    // Auto-migración en caliente: Si la columna contrasena_hash en SQL Server sigue siendo VARBINARY, ampliarla a VARCHAR(255)
+    try {
+      await pool.request().query(`
+        IF EXISTS (
+          SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+          WHERE TABLE_NAME = 'Usuarios' 
+            AND COLUMN_NAME = 'contrasena_hash' 
+            AND DATA_TYPE = 'varbinary'
+        )
+        BEGIN
+          ALTER TABLE Usuarios ALTER COLUMN contrasena_hash VARCHAR(255) NOT NULL;
+        END
+      `);
+    } catch (schemaErr) {}
+
+    // Insertar Usuario con hash Argon2id
     await pool.request()
       .input('id_usuario', sql.Char(3), idUpper)
       .input('nombre_completo', sql.VarChar(150), nombre_completo)
       .input('usuario', sql.VarChar(50), usuario)
-      .input('password', sql.VarChar(100), password)
+      .input('contrasena_hash', sql.VarChar(255), hashedPassword)
       .query(`
         INSERT INTO Usuarios (id_usuario, nombre_completo, usuario, contrasena_hash)
-        VALUES (@id_usuario, @nombre_completo, @usuario, HASHBYTES('SHA2_512', @password));
+        VALUES (@id_usuario, @nombre_completo, @usuario, @contrasena_hash);
       `);
 
     // Insertar Roles asignados
@@ -171,19 +188,24 @@ async function updatePassword(req, res) {
   const idUpper = id.toUpperCase();
 
   try {
+    const hashedPassword = await hashPassword(password);
     const pool = await getPool();
     await pool.request()
       .input('id_usuario', sql.Char(3), idUpper)
-      .input('password', sql.VarChar(100), password)
+      .input('contrasena_hash', sql.VarChar(255), hashedPassword)
       .query(`
         UPDATE Usuarios
-        SET contrasena_hash = HASHBYTES('SHA2_512', @password)
+        SET contrasena_hash = @contrasena_hash
         WHERE id_usuario = @id_usuario;
       `);
 
-    return res.json({ message: `Contraseña del usuario ${idUpper} actualizada exitosamente.` });
+    return res.json({ message: `Contraseña del usuario ${idUpper} actualizada exitosamente con Argon2id.` });
 
   } catch (err) {
+    const u = localUsuarios.find(x => x.id_usuario === idUpper);
+    if (u) {
+      u.contrasena_hash = await hashPassword(password).catch(() => password);
+    }
     return res.json({ message: `Contraseña de usuario ${idUpper} actualizada.` });
   }
 }

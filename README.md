@@ -7,7 +7,7 @@ Aplicación Web Completa para la Gestión de Compras y Adquisiciones Locales des
 ## 🛠️ Stack Tecnológico
 
 - **Backend**: Node.js, Express framework, JWT (JSON Web Tokens), `mssql` (Driver oficial de Microsoft para SQL Server).
-- **Base de Datos**: SQL Server (T-SQL) con encriptación de contraseñas mediante `VARBINARY(64)` e `HASHBYTES('SHA2_512', ...)`.
+- **Base de Datos**: SQL Server (T-SQL) con encriptación de contraseñas de alta seguridad mediante **Argon2id** (`VARCHAR(255)`) con compatibilidad para hashes legados SHA2_512.
 - **Frontend**: HTML5, Vanilla CSS, Tailwind CSS (Design System & Dark Mode), Alpine.js (Reactividad y Modales), SheetJS (`xlsx`) para lectura y carga masiva de Excel en el navegador.
 
 ---

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { getPool, sql } = require('../config/db');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
+const { hashPassword, verifyPassword } = require('../utils/passwordUtils');
 
 // Mock data fallback if database is not reachable
 const fallbackUsers = [
@@ -21,14 +22,28 @@ async function login(req, res) {
 
   try {
     const pool = await getPool();
+
+    // Auto-migración en caliente: Si la columna contrasena_hash en SQL Server sigue siendo VARBINARY, ampliarla a VARCHAR(255)
+    try {
+      await pool.request().query(`
+        IF EXISTS (
+          SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+          WHERE TABLE_NAME = 'Usuarios' 
+            AND COLUMN_NAME = 'contrasena_hash' 
+            AND DATA_TYPE = 'varbinary'
+        )
+        BEGIN
+          ALTER TABLE Usuarios ALTER COLUMN contrasena_hash VARCHAR(255) NOT NULL;
+        END
+      `);
+    } catch (schemaErr) {}
+
     const result = await pool.request()
       .input('usuario', sql.VarChar(50), usuario)
-      .input('password', sql.VarChar(100), password)
       .query(`
-        SELECT u.id_usuario, u.nombre_completo, u.usuario
+        SELECT u.id_usuario, u.nombre_completo, u.usuario, u.contrasena_hash
         FROM Usuarios u
         WHERE u.usuario = @usuario
-          AND u.contrasena_hash = HASHBYTES('SHA2_512', @password)
       `);
 
     if (result.recordset.length === 0) {
@@ -36,6 +51,29 @@ async function login(req, res) {
     }
 
     const user = result.recordset[0];
+    const { valid, needsRehash } = await verifyPassword(user.contrasena_hash, password);
+
+    if (!valid) {
+      return res.status(401).json({ error: 'Credenciales inválidas. Verifique su usuario y contraseña.' });
+    }
+
+    // Migración transparente: Si era un hash legacy SHA2-512, actualizarlo automáticamente a Argon2id
+    if (needsRehash) {
+      try {
+        const newArgonHash = await hashPassword(password);
+        await pool.request()
+          .input('id_usuario', sql.Char(3), user.id_usuario)
+          .input('contrasena_hash', sql.VarChar(255), newArgonHash)
+          .query(`
+            UPDATE Usuarios
+            SET contrasena_hash = @contrasena_hash
+            WHERE id_usuario = @id_usuario;
+          `);
+        console.log(`🔒 Contraseña del usuario '${user.usuario}' migrada transparentemente a Argon2id.`);
+      } catch (rehashErr) {
+        console.warn('⚠️ No se pudo migrar el hash a Argon2id en segundo plano:', rehashErr.message);
+      }
+    }
 
     // Obtener roles del usuario
     const rolesResult = await pool.request()

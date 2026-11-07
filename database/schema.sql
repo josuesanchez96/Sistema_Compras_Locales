@@ -7,7 +7,7 @@ CREATE TABLE Usuarios (
     id_usuario CHAR(3) PRIMARY KEY,                   -- Siglas de 3 letras (ej. JSL)
     nombre_completo VARCHAR(150) NOT NULL,            -- Nombre del usuario
     usuario VARCHAR(50) NOT NULL UNIQUE,              -- Nombre de usuario único
-    contrasena_hash VARBINARY(64) NOT NULL            -- Contraseña encriptada (SHA2_512)
+    contrasena_hash VARCHAR(255) NOT NULL            -- Contraseña encriptada con Argon2id (OWASP)
 );
 
 -- 2. Tabla Roles / Perfiles
